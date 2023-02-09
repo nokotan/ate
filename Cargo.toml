@@ -42,5 +42,5 @@ members = [
 ]
 
 [patch.crates-io]
-tokio = { git = "https://github.com/john-sharratt/tokio.git", branch = "wasix" }
+#tokio = { git = "https://github.com/john-sharratt/tokio.git", branch = "wasix" }
 #tokio = { path = "/prog/tokio/tokio" }

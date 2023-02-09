@@ -5,7 +5,7 @@ use wasmer::MemoryType;
 use wasmer::Module;
 #[cfg(feature = "sys")]
 use wasmer::vm::MemoryStyle;
-use wasmer::vm::VMMemory;
+use wasmer::VMMemory;
 use wasmer_wasi::WasiThreadError;
 use std::future::Future;
 use std::pin::Pin;

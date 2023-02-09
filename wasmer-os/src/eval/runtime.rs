@@ -8,7 +8,7 @@ use derivative::Derivative;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use wasmer::{Module, Store};
-use wasmer::vm::VMMemory;
+use wasmer::VMMemory;
 use wasmer_bus::abi::SerializationFormat;
 use wasmer_bus_process::api::Spawn;
 use wasmer_wasi::{

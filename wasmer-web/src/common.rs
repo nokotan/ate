@@ -124,10 +124,7 @@ impl AnimationFrameCallbackWrapper /*<'a>*/ {
     }
 }
 
-fn fetch_internal(
-    request: &Request
-) -> JsFuture
-{
+fn fetch_internal(request: &Request) -> JsFuture {
     if is_worker() {
         let global = js_sys::global();
         JsFuture::from(
@@ -173,8 +170,7 @@ pub async fn fetch(
         request
     };
 
-    let resp_value = match fetch_internal(&request).await.ok()
-    {
+    let resp_value = match fetch_internal(&request).await.ok() {
         Some(a) => a,
         None => {
             // If the request failed it may be because of CORS so if a cors proxy
@@ -186,7 +182,7 @@ pub async fn fetch(
             } else {
                 return Err(err::ERR_EIO);
             };
-            
+
             let request = Request::new_with_str_and_init(url, &opts).map_err(|_| err::ERR_EIO)?;
 
             let set_headers = request.headers();
@@ -195,7 +191,7 @@ pub async fn fetch(
                     .set(name.as_str(), val.as_str())
                     .map_err(|_| err::ERR_EIO)?;
             }
-        
+
             fetch_internal(&request).await.map_err(|_| err::ERR_EIO)?
         }
     };

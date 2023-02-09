@@ -3,8 +3,8 @@ mod glue;
 mod interval;
 mod pool;
 mod system;
-mod ws;
 mod webgl;
+mod ws;
 
 use wasmer_os::err;
 use wasmer_os::fd;

@@ -1,14 +1,14 @@
 use chrono::prelude::*;
-use wasmer_os::bin_factory::CachedCompiledModules;
 use std::sync::Arc;
-use wasmer_os::api::*;
-use wasmer_os::common::MAX_MPSC;
-use wasmer_os::console::Console;
 use tokio::sync::mpsc;
 #[allow(unused_imports, dead_code)]
 use tracing::{debug, error, info, trace, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use wasmer_os::api::*;
+use wasmer_os::bin_factory::CachedCompiledModules;
+use wasmer_os::common::MAX_MPSC;
+use wasmer_os::console::Console;
 use web_sys::HtmlCanvasElement;
 use web_sys::KeyboardEvent;
 use web_sys::WebGl2RenderingContext;

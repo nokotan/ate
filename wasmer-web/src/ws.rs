@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use std::ops::*;
 use std::sync::Arc;
-use wasmer_os::api::*;
 #[allow(unused_imports, dead_code)]
 use tracing::{debug, error, info, trace, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use wasmer_os::api::*;
 use web_sys::{MessageEvent, WebSocket as WebSocketSys};
 
 #[derive(Clone)]

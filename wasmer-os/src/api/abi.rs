@@ -85,9 +85,9 @@ where
     /// It is ok for this task to block execution and any async futures within its scope
     fn task_wasm(
         &self,
-        task: Box<dyn FnOnce(Store, Module, Option<VMMemory>) -> Pin<Box<dyn Future<Output = ()> + 'static>> + Send + 'static>,
+        task: Box<dyn FnOnce(Store, Option<Module>, Option<VMMemory>) -> Pin<Box<dyn Future<Output = ()> + 'static>> + Send + 'static>,
         store: Store,
-        module: Module,
+        module: Option<Module>,
         spawn_type: SpawnType,
     ) -> Result<(), WasiThreadError>;
 
@@ -277,12 +277,13 @@ impl SystemAbiExt for dyn SystemAbi {
     {
         let (tx_result, rx_result) = mpsc::channel(1);
         if let Err(err) = self.task_wasm(Box::new(move |store, module, memory| {
+            let module = module.unwrap();
             let task = task(store, module, memory);
             Box::pin(async move {
                 let ret = task.await;
                 let _ = tx_result.send(ret).await;
             })
-        }), store, module, spawn_type) {
+        }), store, Some(module), spawn_type) {
             error!("Error while spawning WebAssembly process - {}", err);
         }
         AsyncResult::new(SerializationFormat::Bincode, rx_result)

@@ -103,14 +103,15 @@ for WasiRuntime
         self.pluggable.thread_id_seed.fetch_add(1, Ordering::Relaxed).into()
     }
 
-    fn thread_spawn(&self, task: Box<dyn FnOnce(Store, Module, VMMemory) + Send + 'static>, store: Store, module: Module, memory: VMMemory) -> Result<(), WasiThreadError> {
+    fn thread_spawn(&self, task: Box<dyn FnOnce(VMMemory) + Send + 'static>, memory: VMMemory) -> Result<(), WasiThreadError> {
         let system = System::default();
-        system.task_wasm(Box::new(move |store, module, memory| {
-                task(store, module, memory.expect("failed to use existing memory"));
+        
+        system.task_wasm(Box::new(move |_, _, memory| {
+                task(memory.expect("failed to use existing memory"));
                 Box::pin(async move { })
             }),
-            store,
-            module,
+            Store::default(),
+            None,
             SpawnType::NewThread(memory))
     }
 

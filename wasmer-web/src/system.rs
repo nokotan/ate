@@ -1,26 +1,27 @@
 use async_trait::async_trait;
+use bytes::Bytes;
 use js_sys::Promise;
-use wasmer_os::wasmer::Module;
-use wasmer_os::wasmer::Store;
-use wasmer_os::wasmer::vm::VMMemory;
-use wasmer_os::wasmer_wasi::WasiThreadError;
 use std::future::Future;
 use std::pin::Pin;
-use wasmer_os::api::abi::SystemAbi;
 use tokio::sync::mpsc;
 #[allow(unused_imports, dead_code)]
 use tracing::{debug, error, info, trace, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
+use wasmer_os::api::abi::SystemAbi;
+use wasmer_os::wasmer::Module;
+use wasmer_os::wasmer::Store;
+use wasmer_os::wasmer::VMMemory;
+use wasmer_os::wasmer_wasi::WasiThreadError;
 use web_sys::WebGl2RenderingContext;
 
 use super::common::*;
 use super::pool::WebThreadPool;
+use super::webgl::GlContext;
+use super::webgl::WebGl;
+use super::webgl::WebGlCommand;
 use super::ws::WebSocket;
 use wasmer_os::api::*;
-use super::webgl::WebGl;
-use super::webgl::GlContext;
-use super::webgl::WebGlCommand;
 
 pub(crate) enum TerminalCommand {
     Print(String),
@@ -37,10 +38,7 @@ impl WebSystem {
     pub(crate) fn new(pool: WebThreadPool, webgl2: WebGl2RenderingContext) -> WebSystem {
         let webgl_tx = GlContext::init(webgl2);
 
-        WebSystem {
-            pool,
-            webgl_tx,
-        }
+        WebSystem { pool, webgl_tx }
     }
 }
 
@@ -62,22 +60,26 @@ impl SystemAbi for WebSystem {
 
     fn task_wasm(
         &self,
-        task: Box<dyn FnOnce(Store, Module, Option<VMMemory>) -> Pin<Box<dyn Future<Output = ()> + 'static>> + Send + 'static>,
+        task: Box<
+            dyn FnOnce(
+                    Store,
+                    Option<Module>,
+                    Option<VMMemory>,
+                ) -> Pin<Box<dyn Future<Output = ()> + 'static>>
+                + Send
+                + 'static,
+        >,
         store: Store,
-        module: Module,
+        module: Option<Module>,
         spawn_type: SpawnType,
     ) -> Result<(), WasiThreadError> {
-        let run = move |store, module, memory| {
-            task(store, module, memory)
-        };
-        let module_bytes = module.serialize().unwrap();
-        self.pool.spawn_wasm(run, store, module_bytes, spawn_type)
+        let run = move |store, module, memory| task(store, Some(module), memory);
+        let module_bytes = module.map_or(Vec::new(), |module| module.serialize().unwrap());
+        self.pool
+            .spawn_wasm(run, store, Bytes::from(module_bytes), spawn_type)
     }
 
-    fn task_dedicated(
-        &self,
-        task: Box<dyn FnOnce() + Send + 'static>,
-    ) {
+    fn task_dedicated(&self, task: Box<dyn FnOnce() + Send + 'static>) {
         self.pool.spawn_dedicated(task);
     }
 
@@ -116,7 +118,9 @@ impl SystemAbi for WebSystem {
         let (tx, rx) = mpsc::channel(1);
         self.pool.spawn_shared(Box::new(move || {
             Box::pin(async move {
-                let ret = crate::common::fetch_data(url.as_str(), "GET", false, None, headers, None).await;
+                let ret =
+                    crate::common::fetch_data(url.as_str(), "GET", false, None, headers, None)
+                        .await;
                 let _ = tx.send(ret).await;
             })
         }));
@@ -143,8 +147,9 @@ impl SystemAbi for WebSystem {
                     options.gzip,
                     options.cors_proxy,
                     headers,
-                    data)
-                    .await
+                    data,
+                )
+                .await
                 {
                     Ok(a) => a,
                     Err(err) => {

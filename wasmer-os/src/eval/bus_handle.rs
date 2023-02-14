@@ -5,7 +5,7 @@ use derivative::Derivative;
 use serde::*;
 use tokio::sync::mpsc;
 use wasmer_bus::{abi::SerializationFormat, prelude::BusError};
-use wasmer_vbus::{VirtualBusError, BusDataFormat, VirtualBusInvocation, BusInvocationEvent, VirtualBusScope, VirtualBusInvokable, InstantInvocation, VirtualBusInvoked};
+use wasmer_vbus::{BusError as VirtualBusError, BusDataFormat, VirtualBusInvocation, BusInvocationEvent, VirtualBusScope, VirtualBusInvokable};
 use crate::{bus::{conv_format, Processable, InvokeResult}, api::abi::SystemAbiExt};
 
 #[allow(unused_imports, dead_code)]
@@ -23,7 +23,7 @@ pub struct RuntimeCallOutsideHandle
     pub(crate) task: RuntimeCallOutsideTask,
     pub(crate) rx: mpsc::Receiver<RuntimeCallStateChange>,
     #[derivative(Debug = "ignore")]
-    pub(crate) callbacks: HashMap<u128, Box<dyn FnMut(SerializationFormat, Vec<u8>) + Send + Sync + 'static>>,
+    pub(crate) callbacks: HashMap<String, Box<dyn FnMut(SerializationFormat, Vec<u8>) + Send + Sync + 'static>>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,7 +86,7 @@ impl RuntimeCallOutsideHandle
           T: de::DeserializeOwned
     {
         let hash = type_name_hash::<T>();
-        self.callbacks.insert(hash, Box::new(move |format, data| {
+        self.callbacks.insert(hash.to_string(), Box::new(move |format, data| {
             let data = format.deserialize(data);
             match data {
                 Ok(data) => {
@@ -102,8 +102,8 @@ impl RuntimeCallOutsideHandle
 
     fn process_msg(&mut self, msg: RuntimeCallStateChange) -> Result<Option<(SerializationFormat, Vec<u8>)>, BusError> {
         match msg {
-            RuntimeCallStateChange::Callback { topic_hash, format, buf } => {
-                if let Some(callback) = self.callbacks.get_mut(&topic_hash) {
+            RuntimeCallStateChange::Callback { topic, format, buf } => {
+                if let Some(callback) = self.callbacks.get_mut(&topic) {
                     callback(format, buf);
                 }
                 Ok(None)
@@ -182,8 +182,8 @@ impl RuntimeCallOutsideHandle
         self.task.call(format, data)
     }
 
-    pub fn call_raw(&self, topic_hash: u128, format: BusDataFormat, data: Vec<u8>) -> RuntimeCallOutsideHandle {
-        self.task.call_raw(topic_hash, format, data)
+    pub fn call_raw(&self, topic: String, format: BusDataFormat, data: &[u8]) -> RuntimeCallOutsideHandle {
+        self.task.call_raw(topic, format, data)
     }
 }
 
@@ -191,18 +191,18 @@ impl RuntimeCallOutsideTask
 {
     pub fn call<T>(&self, format: SerializationFormat, data: T) -> Result<RuntimeCallOutsideHandle, BusError>
     where T: ser::Serialize {
-        let topic_hash = type_name_hash::<T>();
+        let topic = type_name_hash::<T>();
         let data = format.serialize(data)?;
-        Ok(self.call_raw(topic_hash, crate::bus::conv_format_back(format), data))
+        Ok(self.call_raw(topic.to_string(), crate::bus::conv_format_back(format), &data))
     }
 
-    pub fn call_raw(&self, topic_hash: u128, format: BusDataFormat, data: Vec<u8>) -> RuntimeCallOutsideHandle {
+    pub fn call_raw(&self, topic: String, format: BusDataFormat, data: &[u8]) -> RuntimeCallOutsideHandle {
         let (tx1, rx1) = mpsc::channel(MAX_MPSC);
         let (tx2, rx2) = mpsc::channel(MAX_MPSC);
         self.system.fire_and_forget(&self.tx, RuntimeNewCall {
-            topic_hash,
+            topic,
             format,
-            data,
+            data: data.to_vec(),
             tx: tx1,
             rx: rx2,
         });
@@ -223,11 +223,11 @@ for RuntimeCallOutsideHandle
 {
     fn invoke(
         &self,
-        topic_hash: u128,
+        topic: String,
         format: BusDataFormat,
-        buf: Vec<u8>,
-    ) -> Box<dyn VirtualBusInvoked> {
-        self.task.invoke(topic_hash, format, buf)
+        buf: &[u8],
+    ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>> {
+        self.task.invoke(topic, format, buf)
     }
 }
 
@@ -236,13 +236,21 @@ for RuntimeCallOutsideTask
 {
     fn invoke(
         &self,
-        topic_hash: u128,
+        topic: String,
         format: BusDataFormat,
-        buf: Vec<u8>,
-    ) -> Box<dyn VirtualBusInvoked> {
-        Box::new(
-            InstantInvocation::call(Box::new(self.call_raw(topic_hash, format, buf)))
-        )
+        buf: &[u8],
+    ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>> {
+        Ok(Box::new(
+            self.call_raw(topic, format, buf)
+        ))
+    }
+}
+
+impl VirtualBusScope
+for RuntimeCallOutsideHandle
+{
+    fn poll_finished(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
     }
 }
 
@@ -251,9 +259,9 @@ for RuntimeCallOutsideHandle
 {
     fn poll_event(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<BusInvocationEvent> {
         match self.rx.poll_recv(cx) {
-            Poll::Ready(Some(RuntimeCallStateChange::Callback { topic_hash, format, buf })) => {
+            Poll::Ready(Some(RuntimeCallStateChange::Callback { topic, format, buf })) => {
                 let format = crate::bus::conv_format_back(format);
-                Poll::Ready(BusInvocationEvent::Callback { topic_hash, format, data: buf })
+                Poll::Ready(BusInvocationEvent::Callback { topic, format, data: buf })
             },
             Poll::Ready(Some(RuntimeCallStateChange::Reply { format, buf })) => {
                 let format = crate::bus::conv_format_back(format);
@@ -261,10 +269,12 @@ for RuntimeCallOutsideHandle
             },
             Poll::Ready(Some(RuntimeCallStateChange::Fault { fault })) => {
                 let fault = crate::bus::conv_error_back(fault);
-                Poll::Ready(BusInvocationEvent::Fault { fault })
+                // Poll::Ready(BusInvocationEvent::Fault { fault })
+                Poll::Pending
             },
             Poll::Ready(None) => {
-                Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted })
+                // Poll::Ready(BusInvocationEvent::Fault { fault: BusError::Aborted })
+                Poll::Pending
             },
             Poll::Pending => Poll::Pending
         }

@@ -590,7 +590,7 @@ impl VirtualFile for Fd {
     fn size(&self) -> u64 {
         0
     }
-    fn set_len(&mut self, _new_size: wasi_types::__wasi_filesize_t) -> Result<(), WasiFsError> {
+    fn set_len(&mut self, _new_size: wasi_types::wasi::Filesize) -> Result<(), WasiFsError> {
         Ok(())
     }
 

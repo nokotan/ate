@@ -105,8 +105,8 @@ impl WasiProxy for WasiTerm {
         &self,
         env: &WasiEnv,
         fd: __wasi_fd_t,
-        offset: __wasi_filesize_t,
-        len: __wasi_filesize_t,
+        offset: wasi_types::wasi::Filesize,
+        len: wasi_types::wasi::Filesize,
         advice: __wasi_advice_t,
     ) -> __wasi_errno_t {
         self.tick(env);
@@ -116,8 +116,8 @@ impl WasiProxy for WasiTerm {
         &self,
         env: &WasiEnv,
         fd: __wasi_fd_t,
-        offset: __wasi_filesize_t,
-        len: __wasi_filesize_t,
+        offset: wasi_types::wasi::Filesize,
+        len: wasi_types::wasi::Filesize,
     ) -> __wasi_errno_t {
         self.tick(env);
         wasmer_wasi::native::fd_allocate(env, fd, offset, len)
@@ -171,7 +171,7 @@ impl WasiProxy for WasiTerm {
         &self,
         env: &WasiEnv,
         fd: __wasi_fd_t,
-        st_size: __wasi_filesize_t,
+        st_size: wasi_types::wasi::Filesize,
     ) -> __wasi_errno_t {
         self.tick(env);
         wasmer_wasi::native::fd_filestat_set_size(env, fd, st_size)
@@ -193,7 +193,7 @@ impl WasiProxy for WasiTerm {
         fd: __wasi_fd_t,
         iovs: WasmPtr<__wasi_iovec_t>,
         iovs_len: u32,
-        offset: __wasi_filesize_t,
+        offset: wasi_types::wasi::Filesize,
         nread: WasmPtr<u32>,
     ) -> __wasi_errno_t {
         self.tick(env);
@@ -224,7 +224,7 @@ impl WasiProxy for WasiTerm {
         fd: __wasi_fd_t,
         iovs: WasmPtr<__wasi_ciovec_t, Array>,
         iovs_len: u32,
-        offset: __wasi_filesize_t,
+        offset: wasi_types::wasi::Filesize,
         nwritten: WasmPtr<u32>,
     ) -> __wasi_errno_t {
         self.tick(env);
@@ -264,7 +264,7 @@ impl WasiProxy for WasiTerm {
         fd: __wasi_fd_t,
         offset: __wasi_filedelta_t,
         whence: __wasi_whence_t,
-        newoffset: WasmPtr<__wasi_filesize_t>,
+        newoffset: WasmPtr<wasi_types::wasi::Filesize>,
     ) -> __wasi_errno_t {
         self.tick(env);
         wasmer_wasi::native::fd_seek(env, fd, offset, whence, newoffset)
@@ -277,7 +277,7 @@ impl WasiProxy for WasiTerm {
         &self,
         env: &WasiEnv,
         fd: __wasi_fd_t,
-        offset: WasmPtr<__wasi_filesize_t>,
+        offset: WasmPtr<wasi_types::wasi::Filesize>,
     ) -> __wasi_errno_t {
         self.tick(env);
         wasmer_wasi::native::fd_tell(env, fd, offset)

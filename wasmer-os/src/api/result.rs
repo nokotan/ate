@@ -7,11 +7,10 @@ use tokio::sync::mpsc;
 use wasmer_bus::abi::SerializationFormat;
 use wasmer_vbus::BusDataFormat;
 use wasmer_vbus::BusInvocationEvent;
-use wasmer_vbus::InstantInvocation;
-use wasmer_vbus::VirtualBusError;
+use wasmer_vbus::BusError;
 use wasmer_vbus::VirtualBusInvocation;
 use wasmer_vbus::VirtualBusInvokable;
-use wasmer_vbus::VirtualBusInvoked;
+use wasmer_vbus::VirtualBusScope;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -58,10 +57,20 @@ where T: Send + 'static,
                 })
             },
             Poll::Ready(None) => {
-                Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted })
+                Poll::Ready(BusInvocationEvent::Fault { fault: BusError::Aborted })
             },
             Poll::Pending => Poll::Pending
         }
+    }
+}
+
+impl<T> VirtualBusScope
+for AsyncResult<T>
+where T: Send + 'static,
+      T: serde::ser::Serialize
+{
+    fn poll_finished(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
     }
 }
 
@@ -71,10 +80,10 @@ where T: Send + 'static
 {
     fn invoke(
         &self,
-        _topic_hash: u128,
+        _topic: String,
         _format: BusDataFormat,
-        _buf: Vec<u8>,
-    ) -> Box<dyn VirtualBusInvoked> {
-        Box::new(InstantInvocation::fault(VirtualBusError::InvalidTopic))
+        _buf: &[u8],
+    ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>> {
+        wasmer_vbus::Result::Err(BusError::InvalidTopic)
     }
 }

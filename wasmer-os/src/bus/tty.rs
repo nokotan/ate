@@ -6,11 +6,11 @@ use async_trait::async_trait;
 use wasmer_bus_fuse::fuse::FsResult;
 use wasmer_vbus::BusDataFormat;
 use wasmer_vbus::BusInvocationEvent;
-use wasmer_vbus::InstantInvocation;
-use wasmer_vbus::VirtualBusError;
+use wasmer_vbus::Result;
+use wasmer_vbus::{BusError as VirtualBusError};
 use wasmer_vbus::VirtualBusInvocation;
 use wasmer_vbus::VirtualBusInvokable;
-use wasmer_vbus::VirtualBusInvoked;
+use wasmer_vbus::VirtualBusScope;
 use std::any::type_name;
 use std::collections::HashMap;
 use std::io;
@@ -33,11 +33,11 @@ use crate::api::*;
 
 pub fn stdin(
     tty: crate::fs::TtyFile,
-) -> Box<dyn VirtualBusInvoked> {
+) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
 
     // Return the invokers
     let stdin = StdinHandler { tty };
-    Box::new(InstantInvocation::call(Box::new(stdin)))
+    Ok(Box::new(stdin))
 }
 
 #[derive(Debug)]
@@ -56,12 +56,13 @@ for StdinHandler {
                         FdMsg::Data { data, flag } => {
                             if flag.is_stdin() {
                                 Poll::Ready(BusInvocationEvent::Callback {
-                                    topic_hash: type_name_hash::<api::TtyStdinRecvCallback>(),
+                                    topic: type_name_hash::<api::TtyStdinRecvCallback>().to_string(),
                                     format: BusDataFormat::Bincode,
                                     data: match SerializationFormat::Bincode.serialize(api::TtyStdinRecvCallback(data)) {
                                         Ok(data) => data,
                                         Err(_) => {
-                                            return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Serialization });
+                                            // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Serialization });
+                                            return Poll::Pending;
                                         }
                                     }
                                 })
@@ -71,12 +72,13 @@ for StdinHandler {
                         }
                         FdMsg::Flush { .. } => {
                             Poll::Ready(BusInvocationEvent::Callback {
-                                topic_hash: type_name_hash::<api::TtyStdinFlushCallback>(),
+                                topic: type_name_hash::<api::TtyStdinFlushCallback>().to_string(),
                                 format: BusDataFormat::Bincode,
                                 data: match SerializationFormat::Bincode.serialize(api::TtyStdinFlushCallback(())) {
                                     Ok(data) => data,
                                     Err(_) => {
-                                        return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Serialization });
+                                        // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Serialization });
+                                        return Poll::Pending;
                                     }
                                 }
                             })
@@ -85,11 +87,19 @@ for StdinHandler {
                 },
                 Poll::Ready(Err(err)) => {
                     debug!("failed to read tty - {}", err);
-                    return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::InternalError });
+                    // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::InternalError });
+                    return Poll::Pending;
                 }
                 Poll::Pending => Poll::Pending
             }
         }
+    }
+}
+
+impl VirtualBusScope
+for StdinHandler {
+    fn poll_finished(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
     }
 }
 
@@ -100,22 +110,22 @@ for StdinHandler {
         _topic_hash: u128,
         _format: BusDataFormat,
         _buf: Vec<u8>,
-    ) -> Box<dyn VirtualBusInvoked> {
-        Box::new(InstantInvocation::fault(VirtualBusError::InvalidTopic))
+    ) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
+        Err(VirtualBusError::InvalidTopic)
     }
 }
 
 pub fn stdout(
     system: System,
     stdout: crate::fd::Fd,
-) -> Box<dyn VirtualBusInvoked> {
+) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
 
     // Return the invokers
     let handler = StdoutHandler {
         system,
         stdout,
     };
-    Box::new(InstantInvocation::call(Box::new(handler)))
+    Ok(Box::new(handler))
 }
 
 #[derive(Debug)]
@@ -132,49 +142,57 @@ for StdoutHandler {
     }
 }
 
+impl VirtualBusScope
+for StdoutHandler
+{
+    fn poll_finished(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
+    }
+}
+
 impl VirtualBusInvokable
 for StdoutHandler {
     fn invoke(
         &self,
-        topic_hash: u128,
+        topic: String,
         format: BusDataFormat,
         buf: Vec<u8>,
-    ) -> Box<dyn VirtualBusInvoked> {
+    ) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
         let mut stdout = self.stdout.clone();
-        if topic_hash == type_name_hash::<api::StdoutWriteRequest>() {
+        if topic == type_name_hash::<api::StdoutWriteRequest>().to_string() {
             let data = match decode_request::<api::StdoutWriteRequest>(
                 format,
                 buf,
             ) {
                 Ok(a) => a.data,
                 Err(err) => {
-                    return Box::new(InstantInvocation::fault(conv_error_back(err)));
+                    return Err(conv_error_back(err));
                 }
             };
             return match stdout.try_write(&data) {
                 Ok(Some(amt)) => {
-                    Box::new(encode_instant_response(BusDataFormat::Bincode, &api::WriteResult::Success(amt)))
+                    encode_instant_response(BusDataFormat::Bincode, &api::WriteResult::Success(amt))
                 },
                 Ok(None) => {
-                    Box::new(InstantInvocation::call(
+                    Ok(
                         Box::new(self.system.spawn_shared(move || async move {
                             match stdout.write_all(&data) {
                                 Ok(_) => api::WriteResult::Success(data.len()),
                                 Err(err) => api::WriteResult::Failed(err.to_string())
                             }
                         }))
-                    ))
+                    )
                 },
                 Err(err) => {
-                    Box::new(encode_instant_response(BusDataFormat::Bincode, &api::WriteResult::Failed(err.to_string())))
+                    encode_instant_response(BusDataFormat::Bincode, &api::WriteResult::Failed(err.to_string()))
                 }
             }
-        } else if topic_hash == type_name_hash::<api::StdoutFlushRequest>() {
+        } else if topic == type_name_hash::<api::StdoutFlushRequest>().to_string() {
             let _ = stdout.flush();
-            Box::new(encode_instant_response(BusDataFormat::Bincode, &()))
+            encode_instant_response(BusDataFormat::Bincode, &())
         } else {
-            debug!("stdout invalid topic (hash={})", topic_hash);
-            Box::new(InstantInvocation::fault(VirtualBusError::InvalidTopic))
+            debug!("stdout invalid topic (hash={})", topic);
+            Err(VirtualBusError::InvalidTopic)
         }
     }
 }
@@ -182,14 +200,14 @@ for StdoutHandler {
 pub fn stderr(
     system: System,
     stderr: crate::fd::Fd,
-) -> Box<dyn VirtualBusInvoked> {
+) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
 
     // Return the invokers
     let handler = StderrHandler {
         system,
         stderr,
     };
-    Box::new(InstantInvocation::call(Box::new(handler)))
+    Ok(Box::new(handler))
 }
 
 #[derive(Debug)]
@@ -206,49 +224,56 @@ for StderrHandler {
     }
 }
 
+impl VirtualBusScope
+for StderrHandler {
+    fn poll_finished(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
+    }
+}
+
 impl VirtualBusInvokable
 for StderrHandler {
     fn invoke(
         &self,
-        topic_hash: u128,
+        topic: String,
         format: BusDataFormat,
         buf: Vec<u8>,
-    ) -> Box<dyn VirtualBusInvoked> {
+    ) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
         let mut stderr = self.stderr.clone();
-        if topic_hash == type_name_hash::<api::StderrWriteRequest>() {
+        if topic == type_name_hash::<api::StderrWriteRequest>().to_string() {
             let data = match decode_request::<api::StderrWriteRequest>(
                 format,
                 buf,
             ) {
                 Ok(a) => a.data,
                 Err(err) => {
-                    return Box::new(InstantInvocation::fault(conv_error_back(err)));
+                    return Err(conv_error_back(err));
                 }
             };
             return match stderr.try_write(&data) {
                 Ok(Some(amt)) => {
-                    Box::new(encode_instant_response(BusDataFormat::Bincode, &api::WriteResult::Success(amt)))
+                    encode_instant_response(BusDataFormat::Bincode, &api::WriteResult::Success(amt))
                 },
                 Ok(None) => {
-                    Box::new(InstantInvocation::call(
+                    Ok(
                         Box::new(self.system.spawn_shared(move || async move {
                             match stderr.write_all(&data) {
                                 Ok(_) => api::WriteResult::Success(data.len()),
                                 Err(err) => api::WriteResult::Failed(err.to_string())
                             }
                         }))
-                    ))
+                    )
                 },
                 Err(err) => {
-                    Box::new(encode_instant_response(BusDataFormat::Bincode, &api::WriteResult::Failed(err.to_string())))
+                    encode_instant_response(BusDataFormat::Bincode, &api::WriteResult::Failed(err.to_string()))
                 }
             }
-        } else if topic_hash == type_name_hash::<api::StderrFlushRequest>() {
+        } else if topic == type_name_hash::<api::StderrFlushRequest>().to_string() {
             let _ = stderr.flush();
-            Box::new(encode_instant_response(BusDataFormat::Bincode, &()))
+            encode_instant_response(BusDataFormat::Bincode, &())
         } else {
-            debug!("stderr invalid topic (hash={})", topic_hash);
-            Box::new(InstantInvocation::fault(VirtualBusError::InvalidTopic))
+            debug!("stderr invalid topic (hash={})", topic);
+            Err(VirtualBusError::InvalidTopic)
         }
     }
 }
@@ -256,7 +281,7 @@ for StderrHandler {
 pub fn rect(
     system: System,
     abi: &Arc<dyn ConsoleAbi>,
-) -> Box<dyn VirtualBusInvoked> {
+) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
     let abi = abi.clone();
     let result = system.spawn_shared(move || {
         let abi = abi.clone();
@@ -268,5 +293,5 @@ pub fn rect(
             }
         }
     });
-    Box::new(InstantInvocation::call(Box::new(result)))
+    Ok(Box::new(result))
 }

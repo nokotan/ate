@@ -36,14 +36,6 @@ impl WebGlInstance {
     }
 }
 
-impl VirtualBusInvoked
-for WebGlInstance
-{
-    fn poll_invoked(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Box<dyn VirtualBusInvocation + Sync>>> {
-        
-    }
-}
-
 impl Session
 for WebGlInstance
 {

@@ -2,7 +2,7 @@ use std::{task::{Poll, Context}, pin::Pin, collections::HashMap, ops::DerefMut, 
 
 use tokio::sync::mpsc;
 use wasmer_bus::{abi::SerializationFormat, prelude::BusError};
-use wasmer_vbus::{VirtualBusError, BusDataFormat};
+use wasmer_vbus::{BusError as VirtualBusError, BusDataFormat};
 use crate::{bus::conv_format, api::abi::SystemAbiExt};
 
 #[allow(unused_imports, dead_code)]
@@ -25,14 +25,14 @@ impl RuntimeBusFeeder
     where T: serde::ser::Serialize {
         let topic_hash = type_name_hash::<T>();
         let data = format.serialize(data)?;
-        Ok(self.call_raw(topic_hash, crate::bus::conv_format_back(format), data))
+        Ok(self.call_raw(topic_hash.to_string(), crate::bus::conv_format_back(format), data))
     }
 
-    pub fn call_raw(&self, topic_hash: u128, format: BusDataFormat, data: Vec<u8>) -> RuntimeCallOutsideHandle {
+    pub fn call_raw(&self, topic: String, format: BusDataFormat, data: Vec<u8>) -> RuntimeCallOutsideHandle {
         let (tx1, rx1) = mpsc::channel(MAX_MPSC);
         let (tx2, rx2) = mpsc::channel(MAX_MPSC);
         self.system.fire_and_forget(&self.listener, RuntimeNewCall {
-            topic_hash,
+            topic,
             format,
             data,
             tx: tx1,
@@ -52,7 +52,7 @@ impl RuntimeBusFeeder
 
 pub(crate) struct RuntimeNewCall
 {
-    pub topic_hash: u128,
+    pub topic: String,
     pub format: BusDataFormat,
     pub data: Vec<u8>,
     pub rx: mpsc::Receiver<RuntimeNewCall>,
@@ -62,7 +62,7 @@ pub(crate) struct RuntimeNewCall
 pub enum RuntimeCallStateChange
 {
     Callback {
-        topic_hash: u128,
+        topic: String,
         format: SerializationFormat,
         buf: Vec<u8>,
     },

@@ -3,15 +3,15 @@
 use tracing::{debug, error, info, trace, warn};
 use wasmer_bus_reqwest::api;
 use wasmer_bus_reqwest::prelude::*;
-use wasmer_vbus::InstantInvocation;
-use wasmer_vbus::VirtualBusInvoked;
+use wasmer_vbus::Result;
+use wasmer_vbus::VirtualBusInvocation;
 
 use crate::api::*;
 
 pub fn reqwest(
     system: System,
     request: api::ReqwestMakeRequest,
-) -> Box<dyn VirtualBusInvoked> {
+) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
     let url = request.url;
     let method = request.method;
     let headers = request.headers;
@@ -45,5 +45,5 @@ pub fn reqwest(
         }
     });
 
-    Box::new(InstantInvocation::call(Box::new(result)))
+    Ok(Box::new(result))
 }

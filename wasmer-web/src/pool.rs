@@ -26,10 +26,10 @@ use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
 use wasm_bindgen_futures::JsFuture;
 use wasmer_os::api::SpawnType;
+use wasmer_os::wasmer::vm::VMMemory;
 use wasmer_os::wasmer::MemoryType;
 use wasmer_os::wasmer::Module;
 use wasmer_os::wasmer::Store;
-use wasmer_os::wasmer::VMMemory;
 use wasmer_os::wasmer::WASM_MAX_PAGES;
 use wasmer_os::wasmer_wasi::WasiThreadError;
 

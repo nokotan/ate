@@ -8,7 +8,7 @@ use derivative::Derivative;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use wasmer::{Module, Store};
-use wasmer::VMMemory;
+use wasmer::vm::VMMemory;
 use wasmer_bus::abi::SerializationFormat;
 use wasmer_bus_process::api::Spawn;
 use wasmer_wasi::{
@@ -18,10 +18,10 @@ use wasmer_wasi::{
     UnsupportedVirtualNetworking,
     WasiError,
     WasiThreadId,
-    WasiThreadError, WasiCallingId,
+    WasiThreadError, WasiBusProcessId,
 };
 use wasmer_vnet::VirtualNetworking;
-use wasmer_vbus::{VirtualBus, VirtualBusError, SpawnOptions, VirtualBusListener, BusCallEvent, VirtualBusSpawner, SpawnOptionsConfig, BusSpawnedProcess, VirtualBusProcess, VirtualBusScope, VirtualBusInvokable, BusDataFormat, VirtualBusInvocation, FileDescriptor, BusInvocationEvent, VirtualBusInvoked};
+use wasmer_vbus::{VirtualBus, BusError, SpawnOptions, VirtualBusListener, BusCallEvent, VirtualBusSpawner, SpawnOptionsConfig, BusSpawnedProcess, VirtualBusProcess, VirtualBusScope, VirtualBusInvokable, BusDataFormat, VirtualBusInvocation, FileDescriptor, BusInvocationEvent};
 
 use crate::api::{System, AsyncResult};
 use crate::api::abi::{SystemAbiExt, SpawnType};
@@ -129,7 +129,7 @@ for WasiRuntime
         return Ok(0)
     }
     
-    fn yield_now(&self, _id: WasiCallingId) -> Result<(), WasiError> {
+    fn yield_now(&self, _id: WasiBusProcessId) -> Result<(), WasiError> {
         let forced_exit = self.forced_exit.load(Ordering::Acquire);
         if forced_exit != 0 {
             return Err(WasiError::Exit(forced_exit));
@@ -149,7 +149,7 @@ for WasiRuntime
         SpawnOptions::new(Box::new(spawner))
     }
 
-    fn listen<'a>(&'a self) -> Result<&'a dyn VirtualBusListener, VirtualBusError> {
+    fn listen<'a>(&'a self) -> Result<&'a dyn VirtualBusListener, BusError> {
         Ok(&self.listener)
     }
 }
@@ -167,13 +167,13 @@ struct RuntimeProcessSpawned
 
 impl RuntimeProcessSpawner
 {
-    pub fn spawn(&mut self, name: &str, config: &SpawnOptionsConfig) -> Result<LaunchResult<EvalResult>, VirtualBusError>
+    pub fn spawn(&mut self, name: &str, config: &SpawnOptionsConfig) -> Result<LaunchResult<EvalResult>, BusError>
     {
         let spawned = self.spawn_internal(name, config)?;
         Ok(spawned.result)
     }
     
-    fn spawn_internal(&mut self, name: &str, config: &SpawnOptionsConfig) -> Result<RuntimeProcessSpawned, VirtualBusError>
+    fn spawn_internal(&mut self, name: &str, config: &SpawnOptionsConfig) -> Result<RuntimeProcessSpawned, BusError>
     {
         let conv_stdio_mode = |mode| {
             use wasmer_vfs::StdioMode as S1;
@@ -191,7 +191,7 @@ impl RuntimeProcessSpawner
                 path: name.to_string(),
                 args: config.args().clone(),
                 chroot: config.chroot(),
-                working_dir: config.working_dir().map(|a| a.to_string()),
+                working_dir: Some(config.working_dir().to_string()),
                 stdin_mode: conv_stdio_mode(config.stdin_mode()),
                 stdout_mode: conv_stdio_mode(config.stdout_mode()),
                 stderr_mode: conv_stdio_mode(config.stderr_mode()),
@@ -254,19 +254,14 @@ impl RuntimeProcessSpawner
 impl VirtualBusSpawner
 for RuntimeProcessSpawner
 {
-    fn spawn(&mut self, name: &str, config: &SpawnOptionsConfig) -> Result<BusSpawnedProcess, VirtualBusError>
+    fn spawn(&mut self, name: &str, config: &SpawnOptionsConfig) -> Result<BusSpawnedProcess, BusError>
     {
         if name == "os" {
             let env = self.process_factory.launch_env();
             return Ok(BusSpawnedProcess {
-                name: "os".to_string(),
-                config: config.clone(),
                 inst: Box::new(
                     StandardBus::new(self.process_factory.clone())
-                ),
-                stdin: Some(Box::new(self.process_factory.stdin(&env))),
-                stdout: Some(Box::new(self.process_factory.stdout(&env).fd())),
-                stderr: Some(Box::new(self.process_factory.stderr(&env))),
+                )
             });
         }
 
@@ -286,12 +281,7 @@ for RuntimeProcessSpawner
 
         Ok(
             BusSpawnedProcess {
-                name: name.to_string(),
-                config: config.clone(),
-                inst: Box::new(process),
-                stdin: Some(Box::new(Fd::new(spawned.result.stdin, None, ReceiverMode::Stream, crate::fd::FdFlag::Stdin(false)))),
-                stdout: Some(Box::new(Fd::new(None, spawned.result.stdout, ReceiverMode::Stream, crate::fd::FdFlag::Stdout(false)))),
-                stderr: Some(Box::new(Fd::new(None, spawned.result.stderr, ReceiverMode::Stream, crate::fd::FdFlag::Stderr(false)))),
+                inst: Box::new(process)
             }
         )
     }
@@ -304,12 +294,12 @@ struct DelayedRuntime
     #[derivative(Debug = "ignore")]
     rx: Mutex<mpsc::Receiver<Arc<WasiRuntime>>>,
     #[derivative(Debug = "ignore")]
-    val: RwLock<Option<Result<Arc<WasiRuntime>, VirtualBusError>>>,
+    val: RwLock<Option<Result<Arc<WasiRuntime>, BusError>>>,
 }
 
 impl DelayedRuntime
 {
-    fn poll_runtime(&self, cx: &mut Context<'_>) -> Poll<Result<Arc<WasiRuntime>, VirtualBusError>>
+    fn poll_runtime(&self, cx: &mut Context<'_>) -> Poll<Result<Arc<WasiRuntime>, BusError>>
     {
         // Fast path
         {
@@ -335,8 +325,8 @@ impl DelayedRuntime
                         Poll::Ready(Ok(runtime))
                     },
                     None => {
-                        guard.replace(Err(VirtualBusError::Aborted));
-                        Poll::Ready(Err(VirtualBusError::Aborted))
+                        guard.replace(Err(BusError::Aborted));
+                        Poll::Ready(Err(BusError::Aborted))
                     }
                 }
             },
@@ -362,11 +352,6 @@ for RuntimeSpawnedProcess
     fn exit_code(&self) -> Option<u32>
     {
         self.exit_code.clone()
-    }
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        let checkpoint2 = Pin::new(self.checkpoint2.deref());
-        checkpoint2.poll(cx)
     }
 }
 
@@ -402,53 +387,80 @@ for RuntimeSpawnedProcess
 {
     fn invoke(
         &self,
-        topic_hash: u128,
+        topic: String,
         format: BusDataFormat,
         buf: Vec<u8>,
-    ) -> Box<dyn VirtualBusInvoked>
+    ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>>
     {
-        Box::new(
+        Ok(Box::new(
             DelayedInvocation {
-                topic_hash,
+                topic,
                 format,
                 buf: Some(buf),
-                runtime: self.runtime.clone()
+                runtime: self.runtime.clone(),
+                feeder: None
             }
-        )
+        ))
     }
 }
 
 #[derive(Debug)]
 struct DelayedInvocation
 {
-    topic_hash: u128,
+    topic: String,
     format: BusDataFormat,
     buf: Option<Vec<u8>>,
     runtime: Arc<DelayedRuntime>,
+    feeder: Option<Box<dyn VirtualBusInvocation>>,
 }
 
-impl VirtualBusInvoked
+impl VirtualBusInvokable
 for DelayedInvocation
 {
-    fn poll_invoked(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Box<dyn VirtualBusInvocation + Sync>, VirtualBusError>> {
-        let runtime = match self.runtime.poll_runtime(cx) {
-            Poll::Ready(Ok(runtime)) => runtime,
-            Poll::Ready(Err(err)) => { return Poll::Ready(Err(err)); },
-            Poll::Pending => { return Poll::Pending; }
-        };
+    fn invoke(
+        &self,
+        _topic: String,
+        _format: BusDataFormat,
+        _buf: Vec<u8>,
+    ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>>
+    {
+        Err(BusError::AlreadyConsumed)
+    }
+}
 
-        let buf = match self.buf.take() {
-            Some(a) => a,
+impl VirtualBusScope
+for DelayedInvocation {
+    fn poll_finished(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
+    }
+}
+
+impl VirtualBusInvocation
+for DelayedInvocation
+{
+    fn poll_event(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<BusInvocationEvent> {
+        let feed = match self.feeder {
+            Some(feed) => feed.as_ref(),
             None => {
-                return Poll::Ready(Err(VirtualBusError::AlreadyConsumed));
+                let runtime = match self.runtime.poll_runtime(cx) {
+                    Poll::Ready(Ok(runtime)) => runtime,
+                    Poll::Ready(Err(err)) => { return Poll::Pending; },
+                    Poll::Pending => { return Poll::Pending; }
+                };
+        
+                let buf = match self.buf.take() {
+                    Some(a) => a,
+                    None => {
+                        return Poll::Pending;
+                    }
+                };
+        
+                let feeder = Box::new(runtime.feeder().call_raw(self.topic, self.format, buf));
+                self.feeder = Some(feeder);
+                self.feeder.unwrap().as_ref()
             }
         };
 
-        let feeder = runtime.feeder();
-        Poll::Ready(
-            Ok(
-                Box::new(feeder.call_raw(self.topic_hash, self.format, buf))
-            )
-        )
+        feed.poll_event(cx)
     }
 }

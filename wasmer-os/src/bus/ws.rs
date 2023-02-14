@@ -4,11 +4,10 @@ use tokio::sync::broadcast;
 use wasmer_bus_ws::model::SendResult;
 use wasmer_vbus::BusDataFormat;
 use wasmer_vbus::BusInvocationEvent;
-use wasmer_vbus::InstantInvocation;
-use wasmer_vbus::VirtualBusError;
+use wasmer_vbus::{BusError as VirtualBusError};
 use wasmer_vbus::VirtualBusInvocation;
 use wasmer_vbus::VirtualBusInvokable;
-use wasmer_vbus::VirtualBusInvoked;
+use wasmer_vbus::VirtualBusScope;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::Context;
@@ -172,7 +171,7 @@ for WebSocket
                 Poll::Ready(Some(data)) => {
                     let data = api::SocketBuilderConnectReceiveCallback(data);
                     return Poll::Ready(BusInvocationEvent::Callback {
-                        topic_hash: type_name_hash::<api::SocketBuilderConnectReceiveCallback>(),
+                        topic: type_name_hash::<api::SocketBuilderConnectReceiveCallback>(),
                         format: BusDataFormat::Bincode,
                         data: match SerializationFormat::Bincode.serialize(data) {
                             Ok(d) => d,
@@ -196,7 +195,7 @@ for WebSocket
                             debug!("confirmed websocket successfully opened");
                             let data = api::SocketBuilderConnectStateChangeCallback(state);
                             return Poll::Ready(BusInvocationEvent::Callback {
-                                topic_hash: type_name_hash::<api::SocketBuilderConnectStateChangeCallback>(),
+                                topic: type_name_hash::<api::SocketBuilderConnectStateChangeCallback>(),
                                 format: BusDataFormat::Bincode,
                                 data: match SerializationFormat::Bincode.serialize(data) {
                                     Ok(d) => d,
@@ -225,16 +224,23 @@ for WebSocket
     }
 }
 
+impl VirtualBusScope
+for WebSocket {
+    fn poll_finished(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
+    }
+}
+
 impl VirtualBusInvokable
 for WebSocket {
     /// Invokes a service within this instance
     fn invoke(
         &self,
-        topic_hash: u128,
+        topic: String,
         format: BusDataFormat,
-        buf: Vec<u8>,
-    ) -> Box<dyn VirtualBusInvoked> {
-        if topic_hash == type_name_hash::<api::WebSocketSendRequest>() {
+        buf: &[u8],
+    ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>> {
+        if topic == type_name_hash::<api::WebSocketSendRequest>() {
             debug!("websocket send {} bytes", buf.len());
             let data = match decode_request::<api::WebSocketSendRequest>(
                 format,
@@ -242,7 +248,7 @@ for WebSocket {
             ) {
                 Ok(a) => a.data,
                 Err(err) => {
-                    return Box::new(InstantInvocation::fault(conv_error_back(err)));
+                    return Err(conv_error_back(err));
                 }
             };
             let data_len = data.len();
@@ -250,8 +256,8 @@ for WebSocket {
             let tx = self.tx_send.clone();
             match tx.try_send(data) {
                 Ok(()) => {
-                    Box::new(encode_instant_response(BusDataFormat::Bincode,
-                        &SendResult::Success(data_len)))
+                    encode_instant_response(BusDataFormat::Bincode,
+                        &SendResult::Success(data_len))
                 },
                 Err(mpsc::error::TrySendError::Full(data)) => {
                     Box::new(DelayedSend {
@@ -263,13 +269,13 @@ for WebSocket {
                 },
                 Err(mpsc::error::TrySendError::Closed(_)) => {
                     debug!("websocket is closed");
-                    Box::new(InstantInvocation::fault(VirtualBusError::Aborted))        
+                    Err(VirtualBusError::Aborted)   
                 }
             }
             
         } else {
-            debug!("websocket invalid topic (hash={})", topic_hash);
-            Box::new(InstantInvocation::fault(VirtualBusError::InvalidTopic))
+            debug!("websocket invalid topic (hash={})", topic);
+            Err(VirtualBusError::InvalidTopic)
         }
     }
 }
@@ -289,24 +295,4 @@ struct DelayedSend
     data_len: usize,
     #[derivative(Debug = "ignore")]
     fut: Pin<Box<dyn Future<Output = Result<(), mpsc::error::SendError<Vec<u8>>>>>>
-}
-
-impl VirtualBusInvoked
-for DelayedSend
-{
-    fn poll_invoked(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Box<dyn VirtualBusInvocation + Sync>, VirtualBusError>>
-    {
-        let fut = self.fut.as_mut();
-        match fut.poll(cx) {
-            Poll::Ready(Ok(())) => {
-                Poll::Ready(Ok(Box::new(encode_instant_response(BusDataFormat::Bincode,
-                    &SendResult::Success(self.data_len)))))
-            },
-            Poll::Ready(Err(err)) => {
-                Poll::Ready(Ok(Box::new(encode_instant_response(BusDataFormat::Bincode,
-                    &SendResult::Failed(err.to_string())))))
-            },
-            Poll::Pending => Poll::Pending
-        }
-    }
 }

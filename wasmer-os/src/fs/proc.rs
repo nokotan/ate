@@ -259,7 +259,7 @@ impl VirtualFile for TtyFile {
     fn size(&self) -> u64 {
         self.fd_stdin.size()
     }
-    fn set_len(&mut self, new_size: wasi_types::__wasi_filesize_t) -> StdResult<(), WasiFsError> {
+    fn set_len(&mut self, new_size: wasi_types::wasi::Filesize) -> StdResult<(), WasiFsError> {
         self.fd_stdout.set_len(new_size)
     }
     fn unlink(&mut self) -> StdResult<(), WasiFsError> {
@@ -309,7 +309,7 @@ impl VirtualFile for NullFile {
     fn size(&self) -> u64 {
         0
     }
-    fn set_len(&mut self, new_size: wasi_types::__wasi_filesize_t) -> StdResult<(), WasiFsError> {
+    fn set_len(&mut self, new_size: wasi_types::wasi::Filesize) -> StdResult<(), WasiFsError> {
         Ok(())
     }
     fn unlink(&mut self) -> StdResult<(), WasiFsError> {
@@ -380,7 +380,7 @@ impl VirtualFile for LogFile {
     fn size(&self) -> u64 {
         0
     }
-    fn set_len(&mut self, new_size: wasi_types::__wasi_filesize_t) -> StdResult<(), WasiFsError> {
+    fn set_len(&mut self, new_size: wasi_types::wasi::Filesize) -> StdResult<(), WasiFsError> {
         Ok(())
     }
     fn unlink(&mut self) -> StdResult<(), WasiFsError> {

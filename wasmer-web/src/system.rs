@@ -9,9 +9,9 @@ use tracing::{debug, error, info, trace, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
 use wasmer_os::api::abi::SystemAbi;
+use wasmer_os::wasmer::vm::VMMemory;
 use wasmer_os::wasmer::Module;
 use wasmer_os::wasmer::Store;
-use wasmer_os::wasmer::VMMemory;
 use wasmer_os::wasmer_wasi::WasiThreadError;
 use web_sys::WebGl2RenderingContext;
 

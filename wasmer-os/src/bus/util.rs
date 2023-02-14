@@ -4,8 +4,9 @@ use tracing::{debug, error, info, trace, warn};
 use wasmer_bus::abi::BusError;
 use wasmer_bus::abi::SerializationFormat;
 use wasmer_vbus::BusDataFormat;
-use wasmer_vbus::InstantInvocation;
-use wasmer_vbus::VirtualBusError;
+use wasmer_vbus::BusInvocationEvent;
+use wasmer_vbus::VirtualBusInvocation;
+use wasmer_vbus::{ BusError as VirtualBusError };
 
 pub fn conv_error(fault: VirtualBusError) -> BusError {
     use VirtualBusError::*;
@@ -82,7 +83,7 @@ pub fn conv_format_back(format: SerializationFormat) -> BusDataFormat {
     }
 }
 
-pub fn decode_request<T>(format: BusDataFormat, request: Vec<u8>) -> Result<T, BusError>
+pub fn decode_request<T>(format: BusDataFormat, request: &[u8]) -> Result<T, BusError>
 where
     T: de::DeserializeOwned,
 {
@@ -98,17 +99,16 @@ where
     format.serialize(response)
 }
 
-pub fn encode_instant_response<T>(format: BusDataFormat, response: &T) -> InstantInvocation
+pub fn encode_instant_response<T>(format: BusDataFormat, response: &T) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>>
 where
     T: Serialize,
 {
     match encode_response(format, response) {
         Ok(data) => {
-            InstantInvocation::response(format, data)
+            Ok(Box::new(BusInvocationEvent::Response { format, data }))
         },
         Err(err) => {
-            InstantInvocation::fault(conv_error_back(err))
+            Err(conv_error_back(err))
         }
     }
-    
 }

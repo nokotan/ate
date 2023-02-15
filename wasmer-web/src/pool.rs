@@ -310,7 +310,7 @@ impl WebThreadPool {
                 let wasm_id = match THREAD_LOCAL_CURRENT_WASM.with(|c| c.borrow().clone()) {
                     Some(id) => id,
                     None => {
-                        return Err(WasiThreadError::InvalidWasmContext);
+                        return Err(WasiThreadError::Unsupported);
                     }
                 };
                 WasmRunType::Existing(wasm_id)

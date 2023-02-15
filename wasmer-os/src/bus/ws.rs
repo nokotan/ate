@@ -171,19 +171,21 @@ for WebSocket
                 Poll::Ready(Some(data)) => {
                     let data = api::SocketBuilderConnectReceiveCallback(data);
                     return Poll::Ready(BusInvocationEvent::Callback {
-                        topic: type_name_hash::<api::SocketBuilderConnectReceiveCallback>(),
+                        topic: type_name_hash::<api::SocketBuilderConnectReceiveCallback>().to_string(),
                         format: BusDataFormat::Bincode,
                         data: match SerializationFormat::Bincode.serialize(data) {
                             Ok(d) => d,
                             Err(err) => {
                                 debug!("failed to serialize web socket received data");
-                                return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                                // return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                                return Poll::Pending;
                             }
                         }
                     });
                 },
                 Poll::Ready(None) => {
-                    return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted });
+                    // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted });
+                    return Poll::Pending;
                 }
                 Poll::Pending => { },
             }
@@ -195,26 +197,29 @@ for WebSocket
                             debug!("confirmed websocket successfully opened");
                             let data = api::SocketBuilderConnectStateChangeCallback(state);
                             return Poll::Ready(BusInvocationEvent::Callback {
-                                topic: type_name_hash::<api::SocketBuilderConnectStateChangeCallback>(),
+                                topic: type_name_hash::<api::SocketBuilderConnectStateChangeCallback>().to_string(),
                                 format: BusDataFormat::Bincode,
                                 data: match SerializationFormat::Bincode.serialize(data) {
                                     Ok(d) => d,
                                     Err(err) => {
                                         debug!("failed to serialize web socket received data");
-                                        return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                                        // return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                                        return Poll::Pending;
                                     }
                                 }
                             });
                         },
                         _ => {
                             debug!("confirmed websocket closed");
-                            return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted });
+                            // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted });
+                            return Poll::Pending;
                         }
                     }
                 },                
                 Poll::Ready(None) => {
                     debug!("confirmed websocket closed");
-                    return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted });
+                    // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted });
+                    return Poll::Pending;
                 },
                 Poll::Pending => {
                     return Poll::Pending;
@@ -240,7 +245,7 @@ for WebSocket {
         format: BusDataFormat,
         buf: &[u8],
     ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>> {
-        if topic == type_name_hash::<api::WebSocketSendRequest>() {
+        if topic == type_name_hash::<api::WebSocketSendRequest>().to_string() {
             debug!("websocket send {} bytes", buf.len());
             let data = match decode_request::<api::WebSocketSendRequest>(
                 format,
@@ -260,12 +265,12 @@ for WebSocket {
                         &SendResult::Success(data_len))
                 },
                 Err(mpsc::error::TrySendError::Full(data)) => {
-                    Box::new(DelayedSend {
+                    Ok(Box::new(DelayedSend {
                         data_len,
                         fut: Box::pin(async move {
                             tx.send(data).await
                         })
-                    })
+                    }))
                 },
                 Err(mpsc::error::TrySendError::Closed(_)) => {
                     debug!("websocket is closed");
@@ -294,5 +299,48 @@ struct DelayedSend
 {
     data_len: usize,
     #[derivative(Debug = "ignore")]
-    fut: Pin<Box<dyn Future<Output = Result<(), mpsc::error::SendError<Vec<u8>>>>>>
+    fut: Pin<Box<dyn Future<Output = Result<(), mpsc::error::SendError<Vec<u8>>>> + Send + Sync + 'static>>
+}
+
+impl VirtualBusInvokable
+for DelayedSend
+{
+    fn invoke(
+        &self,
+        _topic_hash: String,
+        _format: BusDataFormat,
+        _buf: &[u8],
+    ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>> 
+    {
+        Err(wasmer_vbus::BusError::AlreadyConsumed)
+    }
+}
+
+impl VirtualBusScope
+for DelayedSend {
+    fn poll_finished(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
+    }
+}
+
+impl VirtualBusInvocation
+for DelayedSend {
+    fn poll_event(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<BusInvocationEvent> {
+        let fut = self.fut.as_mut();
+        match fut.poll(cx) {
+            Poll::Ready(Ok(())) => {
+                Poll::Ready(BusInvocationEvent::Response {
+                    format: BusDataFormat::Bincode,
+                    data: encode_response(BusDataFormat::Bincode, &SendResult::Success(self.data_len)).unwrap()
+                })
+            },
+            Poll::Ready(Err(err)) => {
+                Poll::Ready(BusInvocationEvent::Response {
+                    format: BusDataFormat::Bincode,
+                    data: encode_response(BusDataFormat::Bincode, &SendResult::Failed(err.to_string())).unwrap()
+                })
+            },
+            Poll::Pending => Poll::Pending
+        }
+    }
 }

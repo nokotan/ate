@@ -657,11 +657,11 @@ pub struct ProcessExecSession {
 }
 
 impl Session for ProcessExecSession {
-    fn call(&mut self, topic_hash: u128, format: BusDataFormat, request: Vec<u8>) -> Result<(Box<dyn Processable + 'static>, Option<Box<dyn Session + 'static>>), BusError> {
+    fn call(&mut self, topic: String, format: BusDataFormat, request: &[u8]) -> Result<(Box<dyn Processable + 'static>, Option<Box<dyn Session + 'static>>), BusError> {
         let ret = {
-            if topic_hash == type_name_hash::<api::ProcessStdinRequest>() {
+            if topic == type_name_hash::<api::ProcessStdinRequest>().to_string() {
                 let request: api::ProcessStdinRequest =
-                    match decode_request(format, request) {
+                    match decode_request(format, &request) {
                         Ok(a) => a,
                         Err(err) => {
                             return Ok((ErrornousInvokable::new(err), None));
@@ -674,7 +674,7 @@ impl Session for ProcessExecSession {
                     );
                 }
                 ResultInvokable::new(conv_format(format), ())
-            } else if topic_hash == type_name_hash::<api::ProcessCloseStdinRequest>() {
+            } else if topic == type_name_hash::<api::ProcessCloseStdinRequest>().to_string() {
                 let _request: api::ProcessCloseStdinRequest =
                     match decode_request(format, request) {
                         Ok(a) => a,

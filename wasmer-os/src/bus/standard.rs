@@ -10,6 +10,7 @@ use wasmer_vbus::VirtualBusInvokable;
 use wasmer_vbus::VirtualBusInvocation;
 use wasmer_vbus::VirtualBusProcess;
 use wasmer_vbus::VirtualBusScope;
+use wasmer_vbus::FileDescriptor;
 
 use crate::api::System;
 use crate::fd::*;
@@ -57,6 +58,18 @@ for StandardBus
     fn exit_code(&self) -> Option<u32> {
         None
     }
+
+    fn stdin_fd(&self) -> Option<FileDescriptor> {
+        None
+    }
+
+    fn stdout_fd(&self) -> Option<FileDescriptor> {
+        None
+    }
+
+    fn stderr_fd(&self) -> Option<FileDescriptor> {
+        None
+    }
 }
 
 impl VirtualBusScope
@@ -72,15 +85,15 @@ for StandardBus
 {
     fn invoke(
         &self,
-        topic_hash: u128,
+        topic: String,
         format: BusDataFormat,
-        buf: Vec<u8>,
+        buf: &[u8],
     ) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
         let format = conv_format(format);
-        match topic_hash {
-            h if h == type_name_hash::<wasmer_bus_ws::api::SocketBuilderConnectRequest>() =>
+        match topic {
+            h if h == type_name_hash::<wasmer_bus_ws::api::SocketBuilderConnectRequest>().to_string() =>
             {
-                let request = match format.deserialize(buf) {
+                let request = match format.deserialize(buf.to_vec()) {
                     Ok(a) => a,
                     Err(err) => {
                         return Err(conv_error_back(err))
@@ -90,8 +103,8 @@ for StandardBus
                     Box::new(ws::web_socket(request))
                 )
             }
-            h if h == type_name_hash::<wasmer_bus_time::api::TimeSleepRequest>() => {
-                let request: wasmer_bus_time::api::TimeSleepRequest = match format.deserialize(buf) {
+            h if h == type_name_hash::<wasmer_bus_time::api::TimeSleepRequest>().to_string() => {
+                let request: wasmer_bus_time::api::TimeSleepRequest = match format.deserialize(buf.to_vec()) {
                     Ok(a) => a,
                     Err(err) => {
                         return Err(conv_error_back(err))
@@ -99,8 +112,8 @@ for StandardBus
                 };
                 Ok(time::sleep(self.system, request.duration_ms))
             }
-            h if h == type_name_hash::<wasmer_bus_reqwest::api::ReqwestMakeRequest>() => {
-                let request: wasmer_bus_reqwest::api::ReqwestMakeRequest = match format.deserialize(buf) {
+            h if h == type_name_hash::<wasmer_bus_reqwest::api::ReqwestMakeRequest>().to_string() => {
+                let request: wasmer_bus_reqwest::api::ReqwestMakeRequest = match format.deserialize(buf.to_vec()) {
                     Ok(a) => a,
                     Err(err) => {
                         return Err(conv_error_back(err))
@@ -108,28 +121,28 @@ for StandardBus
                 };
                 reqwest::reqwest(self.system, request)
             }
-            h if h == type_name_hash::<wasmer_bus_tty::api::TtyStdinRequest>() => {
+            h if h == type_name_hash::<wasmer_bus_tty::api::TtyStdinRequest>().to_string() => {
                 let env = self.process_factory.launch_env();
                 let stdio = self.stdio(&env);
                 let tty = TtyFile::new(&stdio);
-                Ok(tty::stdin(tty))
+                tty::stdin(tty)
             }
-            h if h == type_name_hash::<wasmer_bus_tty::api::TtyStdoutRequest>() => {
+            h if h == type_name_hash::<wasmer_bus_tty::api::TtyStdoutRequest>().to_string() => {
                 let env = self.process_factory.launch_env();
                 let stdout = self.stdout(&env);
-                Ok(tty::stdout(self.system, stdout.fd()))
+                tty::stdout(self.system, stdout.fd())
             }
-            h if h == type_name_hash::<wasmer_bus_tty::api::TtyStderrRequest>() => {
+            h if h == type_name_hash::<wasmer_bus_tty::api::TtyStderrRequest>().to_string() => {
                 let env = self.process_factory.launch_env();
                 let stderr = self.stderr(&env);
-                Ok(tty::stderr(self.system, stderr))
+                tty::stderr(self.system, stderr)
             }
-            h if h == type_name_hash::<wasmer_bus_tty::api::TtyRectRequest>() => {
+            h if h == type_name_hash::<wasmer_bus_tty::api::TtyRectRequest>().to_string() => {
                 let env = self.process_factory.launch_env();
-                Ok(tty::rect(self.system, &env.abi))
+                tty::rect(self.system, &env.abi)
             }
-            h if h == type_name_hash::<wasmer_bus_process::api::PoolSpawnRequest>() => {
-                let request = match format.deserialize(buf) {
+            h if h == type_name_hash::<wasmer_bus_process::api::PoolSpawnRequest>().to_string() => {
+                let request = match format.deserialize(buf.to_vec()) {
                     Ok(a) => a,
                     Err(err) => {
                         return Err(conv_error_back(err))
@@ -145,7 +158,7 @@ for StandardBus
             }
             */
             _ => {
-                error!("the os function ({}) is not supported", topic_hash);
+                error!("the os function ({}) is not supported", topic);
                 Err(BusError::Unsupported)
             },
         }

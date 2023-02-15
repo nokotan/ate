@@ -581,19 +581,19 @@ pub async fn exec_process(
             // If the main thread exited normally and there are still active threads
             // running then we need to wait for them all to exit before we terminate
             if ret == 0 {
-                while wasi_env.data(&store).active_threads() > 0 {
-                    if let Err(err) = wasi_env.data(&store).sleep(Duration::from_millis(50)) {
-                        match err {
-                            WasiError::Exit(code) => {
-                                if code != err::ERR_EINTR {
-                                    ret = code;
-                                }
-                            },
-                            _ => { }
-                        }
-                        break;
-                    }
-                }
+                // while wasi_env.data_mut(&mut store).active_threads() > 0 {
+                //     if let Err(err) = wasi_env.data_mut(&mut store).sleep(Duration::from_millis(50)) {
+                //         match err {
+                //             WasiError::Exit(code) => {
+                //                 if code != err::ERR_EINTR {
+                //                     ret = code;
+                //                 }
+                //             },
+                //             _ => { }
+                //         }
+                //         break;
+                //     }
+                // }
             }
 
             // Ok we are done

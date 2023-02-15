@@ -29,7 +29,7 @@ pub trait Session
 where
     Self: Send,
 {
-    fn call(&mut self, _topic_hash: u128, _format: BusDataFormat, _request: Vec<u8>) -> Result<(Box<dyn Processable + 'static>, Option<Box<dyn Session + 'static>>), BusError> {
+    fn call(&mut self, _topic: String, _format: BusDataFormat, _request: &[u8]) -> Result<(Box<dyn Processable + 'static>, Option<Box<dyn Session + 'static>>), BusError> {
         Ok((ErrornousInvokable::new(BusError::InvalidTopic), None))
     }
 }

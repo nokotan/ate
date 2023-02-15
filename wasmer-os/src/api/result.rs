@@ -51,13 +51,15 @@ where T: Send + 'static,
                     data: match self.format.serialize(data) {
                         Ok(d) => d,
                         Err(err) => {
-                            return Poll::Ready(BusInvocationEvent::Fault { fault: crate::bus::conv_error_back(err) });
+                            // return Poll::Ready(BusInvocationEvent::Fault { fault: crate::bus::conv_error_back(err) });
+                            return Poll::Pending;
                         }
                     }
                 })
             },
             Poll::Ready(None) => {
-                Poll::Ready(BusInvocationEvent::Fault { fault: BusError::Aborted })
+                // Poll::Ready(BusInvocationEvent::Fault { fault: BusError::Aborted })
+                Poll::Pending
             },
             Poll::Pending => Poll::Pending
         }

@@ -103,16 +103,16 @@ for WasiRuntime
         self.pluggable.thread_id_seed.fetch_add(1, Ordering::Relaxed).into()
     }
 
-    fn thread_spawn(&self, task: Box<dyn FnOnce(VMMemory) + Send + 'static>, memory: VMMemory) -> Result<(), WasiThreadError> {
+    fn thread_spawn(&self, task: Box<dyn FnOnce() + Send + 'static>) -> Result<(), WasiThreadError> {
         let system = System::default();
         
-        system.task_wasm(Box::new(move |_, _, memory| {
-                task(memory.expect("failed to use existing memory"));
+        system.task_wasm(Box::new(move |_, _, _| {
+                task();
                 Box::pin(async move { })
             }),
             Store::default(),
             None,
-            SpawnType::NewThread(memory))
+            SpawnType::Create)
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -129,7 +129,7 @@ for WasiRuntime
         return Ok(0)
     }
     
-    fn yield_now(&self, _id: WasiBusProcessId) -> Result<(), WasiError> {
+    fn yield_now(&self, _id: WasiThreadId) -> Result<(), WasiError> {
         let forced_exit = self.forced_exit.load(Ordering::Acquire);
         if forced_exit != 0 {
             return Err(WasiError::Exit(forced_exit));
@@ -149,8 +149,8 @@ for WasiRuntime
         SpawnOptions::new(Box::new(spawner))
     }
 
-    fn listen<'a>(&'a self) -> Result<&'a dyn VirtualBusListener, BusError> {
-        Ok(&self.listener)
+    fn listen(&self) -> Result<Box<dyn VirtualBusListener + Sync>, BusError> {
+        Ok(Box::new(self.listener.clone()))
     }
 }
 
@@ -353,6 +353,18 @@ for RuntimeSpawnedProcess
     {
         self.exit_code.clone()
     }
+
+    fn stdin_fd(&self) -> Option<FileDescriptor> {
+        None
+    }
+
+    fn stdout_fd(&self) -> Option<FileDescriptor> {
+        None
+    }
+
+    fn stderr_fd(&self) -> Option<FileDescriptor> {
+        None
+    }
 }
 
 impl VirtualBusScope
@@ -389,14 +401,14 @@ for RuntimeSpawnedProcess
         &self,
         topic: String,
         format: BusDataFormat,
-        buf: Vec<u8>,
+        buf: &[u8],
     ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>>
     {
         Ok(Box::new(
             DelayedInvocation {
                 topic,
                 format,
-                buf: Some(buf),
+                buf: Some(buf.to_vec()),
                 runtime: self.runtime.clone(),
                 feeder: None
             }
@@ -411,7 +423,7 @@ struct DelayedInvocation
     format: BusDataFormat,
     buf: Option<Vec<u8>>,
     runtime: Arc<DelayedRuntime>,
-    feeder: Option<Box<dyn VirtualBusInvocation>>,
+    feeder: Option<Pin<Box<dyn VirtualBusInvocation>>>,
 }
 
 impl VirtualBusInvokable
@@ -421,7 +433,7 @@ for DelayedInvocation
         &self,
         _topic: String,
         _format: BusDataFormat,
-        _buf: Vec<u8>,
+        _buf: &[u8],
     ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>>
     {
         Err(BusError::AlreadyConsumed)
@@ -439,8 +451,8 @@ impl VirtualBusInvocation
 for DelayedInvocation
 {
     fn poll_event(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<BusInvocationEvent> {
-        let feed = match self.feeder {
-            Some(feed) => feed.as_ref(),
+        match self.feeder {
+            Some(_) => {},
             None => {
                 let runtime = match self.runtime.poll_runtime(cx) {
                     Poll::Ready(Ok(runtime)) => runtime,
@@ -455,12 +467,15 @@ for DelayedInvocation
                     }
                 };
         
-                let feeder = Box::new(runtime.feeder().call_raw(self.topic, self.format, buf));
+                let mut feeder = Box::pin(runtime.feeder().call_raw(self.topic.clone(), self.format, buf));
+               
                 self.feeder = Some(feeder);
-                self.feeder.unwrap().as_ref()
             }
         };
 
-        feed.poll_event(cx)
+        match self.feeder {
+            Some(ref mut feed) => feed.as_mut().poll_event(cx),
+            None => Poll::Pending
+        }
     }
 }

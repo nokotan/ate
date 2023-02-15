@@ -1,10 +1,14 @@
 use serde::*;
+use std::pin::Pin;
+use core::task::{Context, Poll};
 #[allow(unused_imports, dead_code)]
 use tracing::{debug, error, info, trace, warn};
 use wasmer_bus::abi::BusError;
 use wasmer_bus::abi::SerializationFormat;
 use wasmer_vbus::BusDataFormat;
 use wasmer_vbus::BusInvocationEvent;
+use wasmer_vbus::VirtualBusInvokable;
+use wasmer_vbus::VirtualBusScope;
 use wasmer_vbus::VirtualBusInvocation;
 use wasmer_vbus::{ BusError as VirtualBusError };
 
@@ -88,7 +92,7 @@ where
     T: de::DeserializeOwned,
 {
     let format = conv_format(format);
-    format.deserialize(request)
+    format.deserialize(request.to_vec())
 }
 
 pub fn encode_response<T>(format: BusDataFormat, response: &T) -> Result<Vec<u8>, BusError>
@@ -105,10 +109,68 @@ where
 {
     match encode_response(format, response) {
         Ok(data) => {
-            Ok(Box::new(BusInvocationEvent::Response { format, data }))
+            Ok(Box::new(InstantInvocation::new(
+            BusInvocationEvent::Response { format, data }
+            )))
         },
         Err(err) => {
             Err(conv_error_back(err))
+        }
+    }
+}
+
+#[derive(Debug)]
+struct InstantInvocation {
+    val: Option<BusInvocationEvent>
+}
+
+impl InstantInvocation {
+    fn new(val: BusInvocationEvent) -> Self {
+        Self {
+            val: Some(val)
+        }
+    }
+}
+
+impl VirtualBusInvokable
+for InstantInvocation
+{
+    fn invoke(
+        &self,
+        _topic: String,
+        _format: BusDataFormat,
+        _buf: &[u8],
+    ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>> {
+        Ok(Box::new(
+            InstantInvocation {
+                val: None
+            }
+        ))
+    }
+}
+
+impl VirtualBusScope 
+for InstantInvocation
+{
+    fn poll_finished(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        match self.val {
+            Some(_) => Poll::Pending,
+            None => Poll::Ready(())
+        }
+    }
+}
+
+impl VirtualBusInvocation
+for InstantInvocation
+{
+    fn poll_event(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<BusInvocationEvent> {
+        match self.val.take() {
+            Some(val) => {
+                Poll::Ready(val)
+            },
+            None => {
+                Poll::Pending
+            }
         }
     }
 }

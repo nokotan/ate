@@ -107,9 +107,9 @@ impl VirtualBusInvokable
 for StdinHandler {
     fn invoke(
         &self,
-        _topic_hash: u128,
+        _topic_hash: String,
         _format: BusDataFormat,
-        _buf: Vec<u8>,
+        _buf: &[u8],
     ) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
         Err(VirtualBusError::InvalidTopic)
     }
@@ -156,7 +156,7 @@ for StdoutHandler {
         &self,
         topic: String,
         format: BusDataFormat,
-        buf: Vec<u8>,
+        buf: &[u8],
     ) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
         let mut stdout = self.stdout.clone();
         if topic == type_name_hash::<api::StdoutWriteRequest>().to_string() {
@@ -237,7 +237,7 @@ for StderrHandler {
         &self,
         topic: String,
         format: BusDataFormat,
-        buf: Vec<u8>,
+        buf: &[u8],
     ) -> Result<Box<dyn VirtualBusInvocation + Sync>> {
         let mut stderr = self.stderr.clone();
         if topic == type_name_hash::<api::StderrWriteRequest>().to_string() {

@@ -2,7 +2,7 @@ use std::{sync::{Arc, Mutex}, pin::Pin, task::{Context, Poll}};
 
 use tokio::sync::mpsc;
 use wasmer_bus::abi::SerializationFormat;
-use wasmer_vbus::{BusError, VirtualBusListener, BusCallEvent, VirtualBusCalled, VirtualBusScope, VirtualBusListener, BusDataFormat};
+use wasmer_vbus::{BusError, VirtualBusListener, BusCallEvent, VirtualBusCalled, VirtualBusScope, BusDataFormat};
 
 use crate::api::{System, abi::SystemAbiExt};
 
@@ -17,7 +17,7 @@ pub struct RuntimeBusListener
 impl VirtualBusListener
 for RuntimeBusListener
 {
-    fn poll_call(self: Pin<&Self>, cx: &mut Context<'_>) -> Poll<BusCallEvent> {
+    fn poll_call(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<BusCallEvent> {
         let mut guard = self.rx.lock().unwrap();
         match guard.poll_recv(cx) {
             Poll::Ready(Some(call)) => {
@@ -63,27 +63,30 @@ for RuntimeCallInsideHandle {
 impl VirtualBusCalled
 for RuntimeCallInsideHandle
 {
-    fn callback(&self, topic: String, format: BusDataFormat, buf: Vec<u8>) {
+    fn callback(&self, topic: String, format: BusDataFormat, buf: &[u8]) -> Result<(), BusError> {
         let format = crate::bus::conv_format(format);
         self.system.fire_and_forget(&self.tx, RuntimeCallStateChange::Callback {
             topic,
             format,
-            buf,
+            buf: buf.to_vec(),
         });
+        Ok(())
     }
 
-    fn reply(&self, format: BusDataFormat, buf: Vec<u8>) {
+    fn reply(self, format: BusDataFormat, buf: &[u8]) -> Result<(), wasmer_vbus::BusError> {
         let format = crate::bus::conv_format(format);
         self.system.fire_and_forget(&self.tx, RuntimeCallStateChange::Reply {
             format,
-            buf,
+            buf: buf.to_vec(),
         });
+        Ok(())
     }
 
-    fn fault(self: Box<Self>, fault: BusError) {
+    fn fault(self, fault: BusError) -> Result<(), wasmer_vbus::BusError>{
         let fault = crate::bus::conv_error(fault);
         self.system.fire_and_forget(&self.tx, RuntimeCallStateChange::Fault {
             fault
         });
+        Ok(())
     }
 }

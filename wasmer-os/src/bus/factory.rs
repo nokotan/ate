@@ -33,7 +33,7 @@ impl BusFactory {
         parent: Option<CallHandle>,
         handle: CallHandle,
         wapm: String,
-        topic_hash: u128,
+        topic: String,
         format: SerializationFormat,
         request: Vec<u8>,
         ctx: WasmCallerContext,
@@ -45,7 +45,7 @@ impl BusFactory {
         if let Some(parent) = parent {
             let mut sessions = self.sessions.lock().unwrap();
             if let Some(session) = sessions.get_mut(&parent) {
-                match session.call(topic_hash, format, request) {
+                match session.call(topic, format, &request) {
                     Ok((ret, session)) => {
                         // If it returns a session then start it
                         if let Some(session) = session {
@@ -72,7 +72,7 @@ impl BusFactory {
             sub_processes: self.sub_processes.clone(),
             sessions: self.sessions.clone(),
             wapm,
-            topic_hash,
+            topic,
             format,
             request: Some(request),
             ctx,
@@ -99,7 +99,7 @@ where
     sub_processes: SubProcessFactory,
     sessions: Arc<Mutex<HashMap<CallHandle, Box<dyn Session>>>>,
     wapm: String,
-    topic_hash: u128,
+    topic: String,
     format: BusDataFormat,
     request: Option<Vec<u8>>,
     ctx: WasmCallerContext,
@@ -131,7 +131,7 @@ where
 
         // Next we kick off the call itself into the process (with assocated callbacks)
         let call = sub_process.create(
-            self.topic_hash,
+            self.topic.clone(),
             self.format,
             request,
             self.ctx.clone(),

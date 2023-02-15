@@ -163,13 +163,13 @@ impl SubProcess {
 
     pub fn create(
         self: &Arc<Self>,
-        topic_hash: u128,
+        topic: String,
         format: BusDataFormat,
         request: Vec<u8>,
         ctx: WasmCallerContext,
     ) -> Result<(Box<dyn Processable>, Option<Box<dyn Session>>), BusError> {
         let feeder = self.runtime.feeder();
-        let handle = feeder.call_raw(topic_hash, format, request);
+        let handle = feeder.call_raw(topic, format, request);
         let sub_process = self.clone();
 
         let session = SubProcessSession::new(
@@ -206,10 +206,10 @@ impl SubProcessSession {
 }
 
 impl Session for SubProcessSession {
-    fn call(&mut self, topic_hash: u128, format: BusDataFormat, request: Vec<u8>) -> Result<(Box<dyn Processable + 'static>, Option<Box<dyn Session + 'static>>), BusError> {
+    fn call(&mut self, topic: String, format: BusDataFormat, request: &[u8]) -> Result<(Box<dyn Processable + 'static>, Option<Box<dyn Session + 'static>>), BusError> {
         let invoker =
             self.task
-                .call_raw(topic_hash, format, request);
+                .call_raw(topic, format, request);
         Ok((Box::new(invoker), None))
     }
 }
@@ -260,12 +260,13 @@ for SubProcessHandler
                     if flag.is_stdin() {
                         let data = api::PoolSpawnStdoutCallback(data);
                         return Poll::Ready(BusInvocationEvent::Callback {
-                            topic: type_name_hash::<api::PoolSpawnStdoutCallback>(),
+                            topic: type_name_hash::<api::PoolSpawnStdoutCallback>().to_string(),
                             format: BusDataFormat::Bincode,
                             data: match SerializationFormat::Bincode.serialize(data) {
                                 Ok(d) => d,
                                 Err(err) => {
-                                    return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                                    // return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                                    return Poll::Pending;
                                 }
                             }
                         });
@@ -282,12 +283,13 @@ for SubProcessHandler
                     if flag.is_stderr() {
                         let data = api::PoolSpawnStderrCallback(data);
                         return Poll::Ready(BusInvocationEvent::Callback {
-                            topic: type_name_hash::<api::PoolSpawnStderrCallback>(),
+                            topic: type_name_hash::<api::PoolSpawnStderrCallback>().to_string(),
                             format: BusDataFormat::Bincode,
                             data: match SerializationFormat::Bincode.serialize(data) {
                                 Ok(d) => d,
                                 Err(err) => {
-                                    return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                                    // return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                                    return Poll::Pending;
                                 }
                             }
                         });
@@ -311,23 +313,26 @@ for SubProcessHandler
                     code
                 },
                 Some(Ok(None)) => {
-                    return Poll::Ready(BusInvocationEvent::Fault { fault: BusError::Aborted });    
+                    // return Poll::Ready(BusInvocationEvent::Fault { fault: BusError::Aborted });    
+                    return Poll::Pending;
                 }
                 Some(Err(err)) => {
                     err
                 },
                 None => {
-                    return Poll::Ready(BusInvocationEvent::Fault { fault: BusError::Aborted });    
+                    // return Poll::Ready(BusInvocationEvent::Fault { fault: BusError::Aborted }); 
+                    return Poll::Pending;   
                 }
             };
             let data = api::PoolSpawnExitCallback(code as i32);
             return Poll::Ready(BusInvocationEvent::Callback {
-                topic: type_name_hash::<api::PoolSpawnExitCallback>(),
+                topic: type_name_hash::<api::PoolSpawnExitCallback>().to_string(),
                 format: BusDataFormat::Bincode,
                 data: match SerializationFormat::Bincode.serialize(data) {
                     Ok(d) => d,
                     Err(err) => {
-                        return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                        // return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
+                        return Poll::Pending;
                     }
                 }
             });
@@ -350,11 +355,11 @@ for SubProcessHandler
         &self,
         topic: String,
         format: BusDataFormat,
-        buf: Vec<u8>,
+        buf: &[u8],
     ) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>>
     {
         let mut result = self.result.lock().unwrap();
-        if topic == type_name_hash::<api::ProcessStdinRequest>() {
+        if topic == type_name_hash::<api::ProcessStdinRequest>().to_string() {
             let data = match decode_request::<api::ProcessStdinRequest>(
                 format,
                 buf,
@@ -369,27 +374,27 @@ for SubProcessHandler
             if let Some(stdin) = &result.stdin {
                 match wasmer_bus::task::block_on(stdin.send(FdMsg::Data { data, flag: crate::fd::FdFlag::Stdin(false) })) {
                     Ok(_) => {
-                        Ok(Box::new(encode_instant_response(BusDataFormat::Bincode, &data_len)))
+                        encode_instant_response(BusDataFormat::Bincode, &data_len)
                     }
                     Err(err) => {
                         debug!("failed to send data to stdin of process - {}", err);
-                        Err(BusError::InternalError)
+                        Err(wasmer_vbus::BusError::InternalError)
                     }
                 }                
             } else {
-                Err(BusError::BadHandle)
+                Err(wasmer_vbus::BusError::BadHandle)
             }
-        } else if topic == type_name_hash::<api::ProcessCloseStdinRequest>() {
+        } else if topic == type_name_hash::<api::ProcessCloseStdinRequest>().to_string() {
             result.stdin.take();
-            Ok(Box::new(encode_instant_response(BusDataFormat::Bincode, &())))
-        } else if topic == type_name_hash::<api::ProcessFlushRequest>() {
-            Ok(Box::new(encode_instant_response(BusDataFormat::Bincode, &())))
-        } else if topic == type_name_hash::<api::ProcessIdRequest>() {
+            encode_instant_response(BusDataFormat::Bincode, &())
+        } else if topic == type_name_hash::<api::ProcessFlushRequest>().to_string() {
+            encode_instant_response(BusDataFormat::Bincode, &())
+        } else if topic == type_name_hash::<api::ProcessIdRequest>().to_string() {
             let id = 0u32;
-            Ok(Box::new(encode_instant_response(BusDataFormat::Bincode, &id)))
+            encode_instant_response(BusDataFormat::Bincode, &id)
         } else {
             debug!("websocket invalid topic (hash={})", topic);
-            Err(BusError::InvalidTopic)
+            Err(wasmer_vbus::BusError::InvalidTopic)
         }
     }
 }

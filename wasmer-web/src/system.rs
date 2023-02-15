@@ -74,7 +74,7 @@ impl SystemAbi for WebSystem {
         spawn_type: SpawnType,
     ) -> Result<(), WasiThreadError> {
         let run = move |store, module, memory| task(store, Some(module), memory);
-        let module_bytes = module.map_or(Vec::new(), |module| module.serialize().unwrap());
+        let module_bytes = module.map_or(Vec::new(), |module| module.serialize().unwrap().to_vec());
         self.pool
             .spawn_wasm(run, store, Bytes::from(module_bytes), spawn_type)
     }

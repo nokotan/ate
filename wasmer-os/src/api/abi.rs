@@ -146,7 +146,7 @@ pub struct SpawnedMemory
 pub enum SpawnType {
     Create,
     CreateWithType(SpawnedMemory),
-    NewThread(VMMemory),
+    NewThread(Option<VMMemory>),
 }
 
 // System call extensions that provide generics

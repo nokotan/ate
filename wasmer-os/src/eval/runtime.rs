@@ -112,7 +112,7 @@ for WasiRuntime
             }),
             Store::default(),
             None,
-            SpawnType::Create)
+            SpawnType::NewThread(None))
     }
 
     #[cfg(not(target_family = "wasm"))]

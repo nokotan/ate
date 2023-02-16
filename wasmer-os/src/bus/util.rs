@@ -119,6 +119,10 @@ where
     }
 }
 
+pub fn encode_instant_fault(err: BusError) -> wasmer_vbus::Result<Box<dyn VirtualBusInvocation + Sync>> {
+
+}
+
 #[derive(Debug)]
 struct InstantInvocation {
     val: Option<BusInvocationEvent>

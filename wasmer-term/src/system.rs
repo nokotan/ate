@@ -114,7 +114,7 @@ impl SystemAbi for SysSystem {
                         .into()
                 )
             },
-            SpawnType::NewThread(mem) => Some(mem),
+            SpawnType::NewThread(mem) => mem,
             SpawnType::Create => None,
         };
         

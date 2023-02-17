@@ -10,6 +10,7 @@ use wasmer::Memory;
 use wasmer::MemoryType;
 use wasmer::Pages;
 use wasmer_wasi::import_object_for_all_wasi_versions;
+use wasmer_wasi::generate_import_object_from_env;
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::Read;
@@ -498,6 +499,12 @@ pub async fn exec_process(
             
             // Let's instantiate the module with the imports.
             let mut import_object = import_object_for_all_wasi_versions(&mut store, &wasi_env.env);
+            let mut additional_import_object = generate_import_object_from_env(&mut store, &wasi_env.env, wasmer_wasi::WasiVersion::Wasix32v1);
+
+            for ((ns, name), val) in additional_import_object.into_iter() {
+                import_object.define(&ns, &name, val);
+            }
+
             if let Some(memory) = memory {
                 import_object.define("env", "memory", Memory::new_from_existing(&mut store, memory));
             }

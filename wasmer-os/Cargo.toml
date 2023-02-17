@@ -25,7 +25,7 @@ async_ws = [ ]
 wasmer-os-grammar = { version = "^0.1", path = "../wasmer-os-grammar", package = "wasmer-os-grammar" }
 
 wasmer = { version = "3.2.0-alpha.1", git = "https://github.com/wasmerio/wasmer.git", tag = "v3.2.0-alpha.1", default-features = false, features = [ "wat", "tracing" ] }
-wasmer-wasi = { version = "3.2.0-alpha.1", git = "https://github.com/wasmerio/wasmer.git", tag = "v3.2.0-alpha.1", default-features = false, features = [ "mem-fs" ] }
+wasmer-wasi = { version = "3.2.0-alpha.1", git = "https://github.com/wasmerio/wasmer.git", tag = "v3.2.0-alpha.1", default-features = false, features = [ "wasix", "mem-fs" ] }
 wasmer-vfs = { version = "3.2.0-alpha.1", git = "https://github.com/wasmerio/wasmer.git", tag = "v3.2.0-alpha.1", default-features = false, features = ["mem-fs"] }
 wasmer-vnet = { version = "3.2.0-alpha.1", git = "https://github.com/wasmerio/wasmer.git", tag = "v3.2.0-alpha.1", default-features = false }
 wasmer-vbus = { version = "3.2.0-alpha.1", git = "https://github.com/wasmerio/wasmer.git", tag = "v3.2.0-alpha.1", default-features = false }

@@ -178,14 +178,14 @@ for WebSocket
                             Err(err) => {
                                 debug!("failed to serialize web socket received data");
                                 // return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
-                                return Poll::Pending;
+                                return Poll::Ready(conv_fault_to_callback(conv_error_back(err)));
                             }
                         }
                     });
                 },
                 Poll::Ready(None) => {
                     // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted });
-                    return Poll::Pending;
+                    return Poll::Ready(conv_fault_to_callback(VirtualBusError::Aborted));
                 }
                 Poll::Pending => { },
             }
@@ -204,7 +204,7 @@ for WebSocket
                                     Err(err) => {
                                         debug!("failed to serialize web socket received data");
                                         // return Poll::Ready(BusInvocationEvent::Fault { fault: conv_error_back(err) });
-                                        return Poll::Pending;
+                                        return Poll::Ready(conv_fault_to_callback(conv_error_back(err)));
                                     }
                                 }
                             });
@@ -212,14 +212,14 @@ for WebSocket
                         _ => {
                             debug!("confirmed websocket closed");
                             // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted });
-                            return Poll::Pending;
+                            return Poll::Ready(conv_fault_to_callback(VirtualBusError::Aborted));
                         }
                     }
                 },                
                 Poll::Ready(None) => {
                     debug!("confirmed websocket closed");
                     // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Aborted });
-                    return Poll::Pending;
+                    return Poll::Ready(conv_fault_to_callback(VirtualBusError::Aborted));
                 },
                 Poll::Pending => {
                     return Poll::Pending;

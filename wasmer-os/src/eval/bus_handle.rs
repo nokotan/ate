@@ -270,11 +270,11 @@ for RuntimeCallOutsideHandle
             Poll::Ready(Some(RuntimeCallStateChange::Fault { fault })) => {
                 let fault = crate::bus::conv_error_back(fault);
                 // Poll::Ready(BusInvocationEvent::Fault { fault })
-                Poll::Pending
+                Poll::Ready(crate::bus::conv_fault_to_callback(fault))
             },
             Poll::Ready(None) => {
                 // Poll::Ready(BusInvocationEvent::Fault { fault: BusError::Aborted })
-                Poll::Pending
+                Poll::Ready(crate::bus::conv_fault_to_callback(VirtualBusError::Aborted))
             },
             Poll::Pending => Poll::Pending
         }

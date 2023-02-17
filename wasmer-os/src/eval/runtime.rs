@@ -451,8 +451,8 @@ impl VirtualBusInvocation
 for DelayedInvocation
 {
     fn poll_event(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<BusInvocationEvent> {
-        match self.feeder {
-            Some(_) => {},
+        let feed = match self.feeder {
+            Some(ref mut feed) => feed,
             None => {
                 let runtime = match self.runtime.poll_runtime(cx) {
                     Poll::Ready(Ok(runtime)) => runtime,
@@ -470,12 +470,10 @@ for DelayedInvocation
                 let mut feeder = Box::pin(runtime.feeder().call_raw(self.topic.clone(), self.format, buf));
                
                 self.feeder = Some(feeder);
+                self.feeder.as_mut().unwrap()
             }
         };
 
-        match self.feeder {
-            Some(ref mut feed) => feed.as_mut().poll_event(cx),
-            None => Poll::Pending
-        }
+        feed.as_mut().poll_event(cx)
     }
 }

@@ -62,7 +62,7 @@ for StdinHandler {
                                         Ok(data) => data,
                                         Err(_) => {
                                             // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Serialization });
-                                            return Poll::Pending;
+                                            return Poll::Ready(conv_fault_to_callback(VirtualBusError::Serialization));
                                         }
                                     }
                                 })
@@ -78,7 +78,7 @@ for StdinHandler {
                                     Ok(data) => data,
                                     Err(_) => {
                                         // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::Serialization });
-                                        return Poll::Pending;
+                                        return Poll::Ready(conv_fault_to_callback(VirtualBusError::Serialization));
                                     }
                                 }
                             })
@@ -88,7 +88,7 @@ for StdinHandler {
                 Poll::Ready(Err(err)) => {
                     debug!("failed to read tty - {}", err);
                     // return Poll::Ready(BusInvocationEvent::Fault { fault: VirtualBusError::InternalError });
-                    return Poll::Pending;
+                    return Poll::Ready(conv_fault_to_callback(VirtualBusError::InternalError));
                 }
                 Poll::Pending => Poll::Pending
             }

@@ -12,6 +12,8 @@ use wasmer_vbus::VirtualBusScope;
 use wasmer_vbus::VirtualBusInvocation;
 use wasmer_vbus::{ BusError as VirtualBusError };
 
+use super::type_name_hash;
+
 pub fn conv_error(fault: VirtualBusError) -> BusError {
     use VirtualBusError::*;
     match fault {
@@ -60,6 +62,14 @@ pub fn conv_error_back(fault: BusError) -> VirtualBusError {
         BusError::MemoryAccessViolation => MemoryAccessViolation,
         BusError::Unknown => UnknownError,
         BusError::Success => UnknownError,
+    }
+}
+
+pub fn conv_fault_to_callback(fault: VirtualBusError) -> BusInvocationEvent {
+    BusInvocationEvent::Callback { 
+        topic: type_name_hash::<VirtualBusError>().to_string(), 
+        format: BusDataFormat::Bincode, 
+        data: SerializationFormat::Bincode.serialize(fault as u8).unwrap()
     }
 }
 

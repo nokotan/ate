@@ -35,12 +35,13 @@ where
                 return ret;
             },
             Poll::Pending => {
-                #[cfg(not(feature = "rt"))]
+                #[cfg(any(not(feature = "rt"), target_os = "wasi"))]
                 {
+                    crate::abi::syscall::bus_poll_once(std::time::Duration::from_millis(5));
                     std::thread::sleep(std::time::Duration::from_millis(5));
                     continue;
                 }
-                #[cfg(feature = "rt")]
+                #[cfg(all(feature = "rt", not(target_os = "wasi")))]
                 return tokio::task::block_in_place(move || {
                     tokio::runtime::Handle::current().block_on(async move {
                         task.await

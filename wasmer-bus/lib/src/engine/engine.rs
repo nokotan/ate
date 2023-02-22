@@ -388,7 +388,7 @@ impl BusEngine {
         // Start the thread
         std::thread::spawn(move || {
             loop {
-                crate::abi::syscall::bus_poll_once(std::time::Duration::from_secs(60));
+                crate::abi::syscall::bus_poll_once(std::time::Duration::from_secs(1));
             }
         });
     }

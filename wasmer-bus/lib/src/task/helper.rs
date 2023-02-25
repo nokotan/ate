@@ -35,9 +35,13 @@ where
                 return ret;
             },
             Poll::Pending => {
-                #[cfg(any(not(feature = "rt"), target_os = "wasi"))]
+                #[cfg(target_os = "wasi")]
                 {
                     crate::abi::syscall::bus_poll_once(std::time::Duration::from_millis(5));
+                    continue;
+                }
+                #[cfg(all(not(feature = "rt"), not(target_os = "wasi")))]
+                {
                     std::thread::sleep(std::time::Duration::from_millis(5));
                     continue;
                 }

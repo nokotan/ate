@@ -270,9 +270,9 @@ impl Console {
             } else {
                 format!("login --token {}", token)
             };
-            self.on_enter_internal(cmd, false).await;
+            self.on_enter_internal(cmd, false, None).await;
         } else if has_init {
-            self.on_enter_internal("source /bin/init".to_string(), false)
+            self.on_enter_internal("source /bin/init".to_string(), false, None)
                 .await;
         } else {
             self.tty.draw_prompt().await;
@@ -392,7 +392,7 @@ impl Console {
 
         self.tty.draw("\r\n").await;
 
-        self.on_enter_internal(cmd, true).await
+        self.on_enter_internal(cmd, true, None).await
     }
 
     pub fn set_env(&mut self, key: &str, value: &str) {

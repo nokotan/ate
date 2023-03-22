@@ -35,17 +35,23 @@ where
                 return ret;
             },
             Poll::Pending => {
-                #[cfg(target_os = "wasi")]
+                #[cfg(all(target_family = "wasm", target_os = "wasi"))]
                 {
                     crate::abi::syscall::bus_poll_once(std::time::Duration::from_millis(5));
+                    // std::thread::sleep(std::time::Duration::from_millis(5));
                     continue;
                 }
-                #[cfg(all(not(feature = "rt"), not(target_os = "wasi")))]
+                #[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
+                {
+                    // std::thread::sleep(std::time::Duration::from_millis(5));
+                    continue;
+                }
+                #[cfg(all(not(target_family = "wasm"), not(feature = "rt")))]
                 {
                     std::thread::sleep(std::time::Duration::from_millis(5));
                     continue;
                 }
-                #[cfg(all(feature = "rt", not(target_os = "wasi")))]
+                #[cfg(all(not(target_family = "wasm"), feature = "rt"))]
                 return tokio::task::block_in_place(move || {
                     tokio::runtime::Handle::current().block_on(async move {
                         task.await

@@ -419,7 +419,7 @@ impl Console {
     }
 
     pub fn add_preopen_dir(&mut self, preopen: &str) {
-        self.pre_opens.append(preopen.to_string());
+        self.pre_opens.push(preopen.to_string());
     }
 
     pub async fn on_enter_internal(

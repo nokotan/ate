@@ -10,6 +10,7 @@ use wasmer::Memory;
 use wasmer::MemoryType;
 use wasmer::Pages;
 use wasmer_wasi::import_object_for_all_wasi_versions;
+use wasmer_wasi::is_wasix_module;
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::Read;
@@ -143,7 +144,7 @@ pub async fn exec_process(
     let pwd = ctx.working_dir.clone();
     if set_pwd == false {
         envs.insert("PWD".to_string(), pwd.clone());
-    };
+    }
 
     // Create a store for the module and memory
     #[cfg(feature = "sys")]
@@ -414,7 +415,8 @@ pub async fn exec_process(
             // Build the list of arguments
             let args = args.iter().skip(1).map(|a| a.as_str()).collect::<Vec<_>>();
             let envs = envs.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect::<HashMap<_,_>>();
-            
+            let preopen_pwd = pwd.clone();
+
             // Create the `WasiEnv`.
             let mut wasi_env = WasiState::new(cmd.as_str());
             let mut wasi_env = wasi_env
@@ -437,11 +439,17 @@ pub async fn exec_process(
                     .preopen_dir(Path::new(chroot.as_str()))
                     .unwrap()
                     .map_dir(".", Path::new(chroot.as_str()));
-            } else {
+            } else if is_wasix_module(&module) {
                 wasi_env
                     .preopen_dir(Path::new("/"))
                     .unwrap()
                     .map_dir(".", "/");
+            } else {
+                let pwdbuf = PathBuf::from(preopen_pwd);
+                wasi_env
+                    .preopen_dir(&pwdbuf)
+                    .unwrap()
+                    .map_dir(".", &pwdbuf);
             }
 
             // Add the extra pre-opens
@@ -516,6 +524,9 @@ pub async fn exec_process(
                 let ctx = ctx_taker.take_context().unwrap();
                 return (ctx, ERR_ENOEXEC);
             }
+
+            // FIXME
+            wasi_env.data_mut(&mut store).state().fs.is_wasix.store(false, Ordering::Release);
 
             // If this module exports an _initialize function, run that first.
             if let Ok(initialize) = instance.exports.get_function("_initialize") {

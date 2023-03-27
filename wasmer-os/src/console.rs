@@ -409,6 +409,13 @@ impl Console {
         });
     }
 
+    pub fn set_current_dir(&mut self, pwd: &str) {
+        let mut state = self.state.lock().unwrap();
+        state.path = pwd.to_string();
+        state.env.set_var("PWD", pwd.to_string());
+        state.env.export("PWD");
+    }
+
     pub async fn on_enter_internal(
         &mut self,
         mut cmd: String,

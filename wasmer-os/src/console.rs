@@ -44,6 +44,7 @@ pub struct Console {
     stdout: Stdout,
     stderr: Fd,
     exec: EvalFactory,
+    pre_opens: Vec<String>,
     #[cfg(feature = "sys")]
     engine: Option<Engine>,
     compiler: Compiler,
@@ -154,6 +155,7 @@ impl Console {
             tty,
             reactor,
             exec: exec_factory,
+            pre_opens: Vec::new(),
             #[cfg(feature = "sys")]
             engine,
             compiler,
@@ -344,7 +346,7 @@ impl Console {
                 self.stderr.clone(),
                 false,
                 state.path.clone(),
-                Vec::new(),
+                self.pre_opens.clone(),
                 state.rootfs.clone(),
                 #[cfg(feature = "sys")]
                 self.engine.clone(),
@@ -414,6 +416,10 @@ impl Console {
         state.path = pwd.to_string();
         state.env.set_var("PWD", pwd.to_string());
         state.env.export("PWD");
+    }
+
+    pub fn add_preopen_dir(&mut self, preopen: &str) {
+        self.pre_opens.append(preopen.to_string());
     }
 
     pub async fn on_enter_internal(

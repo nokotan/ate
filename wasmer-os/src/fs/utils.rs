@@ -22,6 +22,13 @@ pub fn create_root_fs(inner: Option<Box<dyn MountedFileSystem>>) -> UnionFileSys
     mounts
 }
 
+pub fn seed_root_fs(mounts: &mut UnionFileSystem) {
+    append_static_dir(mounts, &STATIC_DIR);
+
+    // The WAPM installations will go to /.app as they are ripe for deduplication
+    mounts.mount("app", "/.app", false, Box::new(TmpFileSystem::new()), None);
+}
+
 pub fn append_static_dir(fs: &mut UnionFileSystem, dir: &Dir) {
     for dir in dir.dirs() {
         if let Some(path) = dir.path().to_str() {
